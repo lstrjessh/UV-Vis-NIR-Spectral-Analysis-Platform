@@ -2,15 +2,11 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import io
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from scipy.signal import find_peaks, savgol_filter
-from functools import lru_cache
 import time
 from typing import Optional, Tuple, List, Dict, Union
 import warnings
 
-# Suppress scipy warnings for cleaner output
+# Suppress warnings for cleaner output
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 
 # --- Application Configuration ---
@@ -274,8 +270,10 @@ class PlotGenerator:
     
     @staticmethod
     def create_base_plot(title: str, x_label: str, y_label: str, 
-                        x_range: Optional[List[float]] = None, height: int = 500) -> go.Figure:
+                        x_range: Optional[List[float]] = None, height: int = 500):
         """Create base plot configuration."""
+        # Lazy import plotly (only when plotting)
+        import plotly.graph_objects as go
         fig = go.Figure()
         fig.update_layout(
             title=title,
@@ -291,8 +289,9 @@ class PlotGenerator:
 
     @staticmethod
     def plot_counts_preview(df: pd.DataFrame, title: str, line_color: str = 'blue',
-                            x_range: Optional[List[float]] = None, height: int = 250) -> go.Figure:
+                            x_range: Optional[List[float]] = None, height: int = 250):
         """Create a simple counts vs wavelength plot for waveform previews."""
+        import plotly.graph_objects as go
         fig = PlotGenerator.create_base_plot(
             title, 'Wavelength (nm)', 'Counts', x_range, height
         )
@@ -306,8 +305,9 @@ class PlotGenerator:
     def plot_absorbance_optimized(df: pd.DataFrame,
                                 peak_info: Optional[Tuple] = None,
                                 smoothed_data: Optional[np.ndarray] = None,
-                                x_range: Optional[List[float]] = None) -> go.Figure:
+                                x_range: Optional[List[float]] = None):
         """Simplified absorbance plot with color gradient."""
+        import plotly.graph_objects as go
         
         fig = PlotGenerator.create_base_plot(
             'Absorbance Spectrum',
@@ -469,6 +469,9 @@ def find_absorption_peaks_enhanced(wavelengths: np.ndarray, absorbances: np.ndar
         return None
     
     try:
+        # Lazy import scipy (only when peak detection is actually used)
+        from scipy.signal import find_peaks
+        
         # Calculate distance in points
         avg_spacing = np.mean(np.diff(wavelengths))
         distance_points = max(1, int(min_distance_nm / avg_spacing))
@@ -524,6 +527,8 @@ def apply_savitzky_golay_enhanced(data: np.ndarray, window_length: int,
         return None
     
     try:
+        # Lazy import scipy (only when smoothing is actually used)
+        from scipy.signal import savgol_filter
         return savgol_filter(data, window_length, poly_order)
     except Exception as e:
         st.error(f"Smoothing error: {str(e)}")
@@ -851,6 +856,9 @@ def display_data_table(df_result, filename_base="absorbance_data"):
 
 def display_raw_spectra(df_result):
     """Display raw spectral data plots."""
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    
     st.markdown("#### 📉 Raw Detector Counts")
     
     # Create subplot
@@ -881,6 +889,7 @@ def display_raw_spectra(df_result):
 
 def display_peak_analysis(df_result, peak_info, filename_base="absorbance_data"):
     """Display peak analysis results."""
+    import plotly.graph_objects as go
     st.markdown("#### 🎯 Peak Detection Results")
     
     if peak_info is None or len(peak_info[0]) == 0:

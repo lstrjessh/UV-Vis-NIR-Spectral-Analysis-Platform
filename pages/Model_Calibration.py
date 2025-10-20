@@ -7,8 +7,6 @@ Optimized and modular spectroscopic calibration system with advanced ML models.
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from pathlib import Path
 import time
 from typing import Dict, List, Optional, Any
@@ -19,26 +17,38 @@ warnings.filterwarnings('ignore')
 import sys
 sys.path.append(str(Path(__file__).parent))
 
-# Import calibration system components
-from calibration_v2.core import (
-    ModelConfig, 
-    CalibrationDataset,
-    SpectralData
-)
-from calibration_v2.data import (
-    StreamlitFileLoader,    
-    StandardPreprocessor,
-    CacheManager
-)
-from calibration_v2.models import ModelFactory, ModelRegistry
-
 # Page configuration
 st.set_page_config(
-    page_title="Model Calibration",
+    page_title="Calibration",
     page_icon="🔬",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Cached resource loaders
+@st.cache_resource
+def get_model_factory():
+    """Get cached ModelFactory instance."""
+    from calibration_v2.models import ModelFactory
+    return ModelFactory()
+
+@st.cache_resource
+def get_model_registry():
+    """Get cached ModelRegistry instance."""
+    from calibration_v2.models import ModelRegistry
+    return ModelRegistry()
+
+@st.cache_resource
+def get_file_loader():
+    """Get cached StreamlitFileLoader instance."""
+    from calibration_v2.data import StreamlitFileLoader
+    return StreamlitFileLoader()
+
+@st.cache_resource
+def get_cache_manager():
+    """Get cached CacheManager instance."""
+    from calibration_v2.data import CacheManager
+    return CacheManager()
 
 # Initialize session state
 def init_session_state():
@@ -47,8 +57,6 @@ def init_session_state():
         st.session_state.dataset = None
     if 'model_results' not in st.session_state:
         st.session_state.model_results = {}
-    if 'cache_manager' not in st.session_state:
-        st.session_state.cache_manager = CacheManager()
     if 'selected_models' not in st.session_state:
         st.session_state.selected_models = []
 
@@ -59,9 +67,10 @@ class CalibrationApp:
     """Main application class for calibration modeling."""
     
     def __init__(self):
-        self.loader = StreamlitFileLoader()
-        self.factory = ModelFactory()
-        self.registry = ModelRegistry()
+        # Use cached instances (lazy-loaded)
+        self.loader = get_file_loader()
+        self.factory = get_model_factory()
+        self.registry = get_model_registry()
         
     def run(self):
         """Run the main application."""
@@ -90,12 +99,9 @@ class CalibrationApp:
     
     def _render_header(self):
         """Render application header."""
-        st.title("🔬 Calibration Modeling System")
+        st.title("Calibration")
         st.markdown("""        
-        **Features:**
-        - 🚀 Optimized model implementations with automatic hyperparameter tuning
-        - 📈 Comprehensive metrics and visualizations
-        - 🔄 Modular architecture for easy extension
+        Build and optimize calibration models with automatic hyperparameter tuning and comprehensive performance metrics.
         """)
     
     def _render_sidebar(self):
@@ -174,12 +180,15 @@ class CalibrationApp:
             
             # Cache management
             st.subheader("💾 Cache Management")
-            cache_stats = st.session_state.cache_manager.get_stats()
+            cache_manager = get_cache_manager()
+            cache_stats = cache_manager.get_stats()
             st.metric("Cache Entries", cache_stats['memory_entries'])
             st.metric("Cache Size", f"{cache_stats['memory_size_mb']:.2f} MB")
             
             if st.button("Clear Cache"):
-                st.session_state.cache_manager.clear()
+                cache_manager.clear()
+                st.cache_data.clear()
+                st.cache_resource.clear()
                 st.success("Cache cleared!")
                 st.rerun()
     
@@ -292,6 +301,9 @@ class CalibrationApp:
             # Apply preprocessing
             if st.button("Apply Preprocessing", type="primary"):
                 with st.spinner("Preprocessing data..."):
+                    # Lazy import
+                    from calibration_v2.data import StandardPreprocessor
+                    
                     preprocessor = StandardPreprocessor(
                         smoothing=smoothing,
                         smoothing_window=window_size if smoothing else 5,
@@ -310,6 +322,10 @@ class CalibrationApp:
             
             # Show before/after comparison
             if hasattr(st.session_state, 'preprocessed_dataset'):
+                # Lazy import plotly
+                import plotly.graph_objects as go
+                from plotly.subplots import make_subplots
+                
                 fig = make_subplots(
                     rows=1, cols=2,
                     subplot_titles=("Original", "Preprocessed")
@@ -427,8 +443,12 @@ class CalibrationApp:
         with tab4:
             self._render_export()
     
-    def _train_models(self, dataset: CalibrationDataset, train_split: float):
+    def _train_models(self, dataset, train_split: float):
         """Train selected models."""
+        # Lazy import
+        from calibration_v2.core import ModelConfig
+        from sklearn.model_selection import train_test_split
+        
         # Prepare data
         X, y, wavelengths = dataset.to_matrix()
         
@@ -437,7 +457,6 @@ class CalibrationApp:
             return
         
         # Split data
-        from sklearn.model_selection import train_test_split
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, train_size=train_split, random_state=42
         )
@@ -490,6 +509,10 @@ class CalibrationApp:
     
     def _render_model_comparison(self):
         """Render model comparison visualizations."""
+        # Lazy import plotly
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        
         # Metrics comparison
         st.subheader("Performance Metrics")
         
@@ -539,6 +562,10 @@ class CalibrationApp:
     
     def _render_predictions(self):
         """Render prediction plots."""
+        # Lazy import plotly
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        
         st.subheader("Prediction Analysis")
         
         # Model selection
@@ -613,6 +640,9 @@ class CalibrationApp:
     
     def _render_feature_importance(self):
         """Render feature importance analysis."""
+        # Lazy import plotly
+        import plotly.graph_objects as go
+        
         st.subheader("Feature Importance")
         
         # Filter models with feature importance
@@ -663,57 +693,67 @@ class CalibrationApp:
         """Render export options."""
         st.subheader("Export Results")
         
+        # Filename input
+        output_filename = st.text_input(
+            "Output filename (without extension)",
+            value="calibration_results",
+            help="Specify the base name for downloaded files"
+        )
+        
+        st.markdown("")  # Spacer
+        
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("📊 Export Metrics (CSV)"):
-                # Create comprehensive results DataFrame
-                results_data = []
-                for name, result in st.session_state.model_results.items():
-                    row = {
-                        'Model': name,
-                        'Train_R2': result.metrics.r2,
-                        'Test_R2': result.test_metrics.r2,
-                        'RMSE': result.metrics.rmse,
-                        'MAE': result.metrics.mae,
-                        'Training_Time': result.metrics.training_time
-                    }
-                    if result.metrics.cv_mean:
-                        row['CV_Mean'] = result.metrics.cv_mean
-                        row['CV_Std'] = result.metrics.cv_std
-                    results_data.append(row)
-                
-                df = pd.DataFrame(results_data)
-                csv = df.to_csv(index=False)
-                
-                st.download_button(
-                    label="Download CSV",
-                    data=csv,
-                    file_name="calibration_results.csv",
-                    mime="text/csv"
-                )
+            # Create comprehensive results DataFrame
+            results_data = []
+            for name, result in st.session_state.model_results.items():
+                row = {
+                    'Model': name,
+                    'Train_R2': result.metrics.r2,
+                    'Test_R2': result.test_metrics.r2,
+                    'RMSE': result.metrics.rmse,
+                    'MAE': result.metrics.mae,
+                    'Training_Time': result.metrics.training_time
+                }
+                if result.metrics.cv_mean:
+                    row['CV_Mean'] = result.metrics.cv_mean
+                    row['CV_Std'] = result.metrics.cv_std
+                results_data.append(row)
+            
+            df = pd.DataFrame(results_data)
+            csv = df.to_csv(index=False)
+            
+            st.download_button(
+                label="📥 Download Metrics (CSV)",
+                data=csv,
+                file_name=f"{output_filename}.csv",
+                mime="text/csv"
+            )
         
         with col2:
-            if st.button("💾 Export Models (Pickle)"):
-                import pickle
-                
-                # Serialize all models
-                models_dict = {
-                    name: result.model 
-                    for name, result in st.session_state.model_results.items()
-                }
-                
-                pickle_bytes = pickle.dumps(models_dict)
-                
-                st.download_button(
-                    label="Download Models",
-                    data=pickle_bytes,
-                    file_name="calibration_models.pkl",
-                    mime="application/octet-stream"
-                )
+            import pickle
+            
+            # Serialize all models
+            models_dict = {
+                name: result.model 
+                for name, result in st.session_state.model_results.items()
+            }
+            
+            pickle_bytes = pickle.dumps(models_dict)
+            
+            st.download_button(
+                label="📥 Download Models (Pickle)",
+                data=pickle_bytes,
+                file_name=f"{output_filename}_models.pkl",
+                mime="application/octet-stream"
+            )
     
-    def _create_spectral_plot(self, dataset: CalibrationDataset) -> go.Figure:
+    def _create_spectral_plot(self, dataset):
         """Create spectral visualization."""
+        # Lazy import plotly
+        import plotly.graph_objects as go
+        
         fig = go.Figure()
         
         for spectrum in dataset.spectra[:10]:  # Limit to 10 for clarity
