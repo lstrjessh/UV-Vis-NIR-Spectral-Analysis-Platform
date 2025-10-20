@@ -15,14 +15,14 @@ warnings.filterwarnings('ignore', category=RuntimeWarning)
 
 # --- Application Configuration ---
 st.set_page_config(
-    page_title="Spectrophotometry Absorbance Calculator",
+    page_title="Absorbance Calculator",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # --- Constants ---
-DEFAULT_SPECTRUM_MIN = 340
+DEFAULT_SPECTRUM_MIN = 350
 DEFAULT_SPECTRUM_MAX = 800
 EPSILON = 1e-10
 MAX_FILE_SIZE_MB = 50
@@ -35,7 +35,6 @@ def initialize_session_state():
         'analysis_min_wl': float(DEFAULT_SPECTRUM_MIN),
         'analysis_max_wl': float(DEFAULT_SPECTRUM_MAX),
         'peak_source': 'Raw Absorbance',
-        'path_length_cm': 1.0,
         'plot_range': None,
         'apply_smoothing': False,
         'sg_window': 11,
@@ -218,8 +217,7 @@ class SpectralProcessor:
     
     @staticmethod
     def calculate_absorbance(df_ref: pd.DataFrame, df_sample: pd.DataFrame, 
-                           df_dark: Optional[pd.DataFrame] = None, 
-                           path_length_cm: float = 1.0) -> Optional[pd.DataFrame]:
+                           df_dark: Optional[pd.DataFrame] = None) -> Optional[pd.DataFrame]:
         """Enhanced absorbance calculation with better error handling."""
         try:
             # Validate inputs
@@ -264,10 +262,6 @@ class SpectralProcessor:
             
             result['Absorbance'] = absorbance
             
-            # Calculate absorbance per cm
-            if path_length_cm > 0:
-                result['Absorbance_per_cm'] = absorbance / path_length_cm
-            
             return result
             
         except Exception as e:
@@ -309,14 +303,14 @@ class PlotGenerator:
         return fig
 
     @staticmethod
-    def plot_absorbance_optimized(df: pd.DataFrame, path_length_mm: float,
+    def plot_absorbance_optimized(df: pd.DataFrame,
                                 peak_info: Optional[Tuple] = None,
                                 smoothed_data: Optional[np.ndarray] = None,
                                 x_range: Optional[List[float]] = None) -> go.Figure:
         """Simplified absorbance plot with color gradient."""
         
         fig = PlotGenerator.create_base_plot(
-            f'Absorbance Spectrum (Path Length: {path_length_mm:.2f} mm)',
+            'Absorbance Spectrum',
             'Wavelength (nm)', 'Absorbance (AU)', x_range
         )
         
@@ -540,8 +534,8 @@ def main():
     """Main application function with improved structure."""
     
     # Header
-    st.title("Spectrophotometric Data Processing & Analysis")
-    st.markdown("### Advanced spectral data processing with real-time visualization and analysis")
+    st.title("Absorbance Calculator")
+    st.markdown("### Spectral data processing with real-time visualization and peak analysis")
     
     # Sidebar configuration
     setup_sidebar()
@@ -562,16 +556,6 @@ def setup_sidebar():
     """Setup sidebar with enhanced controls."""
     with st.sidebar:
         st.header("⚙️ Configuration")
-
-        # Measurement settings
-        with st.expander("📏 Measurement Settings", expanded=True):
-            path_length_mm = st.number_input(
-                "Path Length (mm)",
-                min_value=0.01, max_value=1000.0, 
-                value=10.0, step=0.1,
-                help="Optical path length of the sample cell"
-            )
-            st.session_state.path_length_cm = path_length_mm / 10.0
         
         # Analysis range
         with st.expander("📊 Analysis Range", expanded=True):
@@ -750,7 +734,7 @@ def process_and_display_results(ref_files, sample_files, dark_files):
         # Calculate absorbance
         if df_ref is not None and df_sample is not None:
             df_result = SpectralProcessor.calculate_absorbance(
-                df_ref, df_sample, df_dark, st.session_state.path_length_cm
+                df_ref, df_sample, df_dark
             )
         else:
             df_result = None
@@ -796,37 +780,48 @@ def process_and_display_results(ref_files, sample_files, dark_files):
 def display_results_tabs(df_result, smoothed_data, peak_info):
     """Display results in organized tabs."""
     
-    tab1, tab2, tab3, tab4 = st.tabs(["📈 Absorbance", "📊 Data Table", "📉 Raw Spectra", "🎯 Peak Analysis"])
+    # Add filename input
+    st.markdown("#### 💾 Output File Name")
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        output_filename = st.text_input(
+            "Enter filename (without extension)",
+            value="absorbance_data",
+            help="Specify the base name for downloaded files"
+        )
+    with col2:
+        st.markdown("")  # Spacer
+        st.markdown("")  # Spacer
+    
+    tab1, tab2, tab3 = st.tabs(["📈 Absorbance & Data", "📉 Raw Spectra", "🎯 Peak Analysis"])
     
     with tab1:
+        # Display absorbance plot
         st.plotly_chart(
             PlotGenerator.plot_absorbance_optimized(
                 df_result,
-                st.session_state.path_length_cm * 10,  # Convert to mm
                 peak_info,
                 smoothed_data,
                 st.session_state.get('plot_range')
             ),
             use_container_width=True
         )
+        
+        # Display data table
+        display_data_table(df_result, output_filename)
     
     with tab2:
-        display_data_table(df_result)
-    
-    with tab3:
         display_raw_spectra(df_result)
     
-    with tab4:
-        display_peak_analysis(df_result, peak_info)
+    with tab3:
+        display_peak_analysis(df_result, peak_info, output_filename)
 
-def display_data_table(df_result):
+def display_data_table(df_result, filename_base="absorbance_data"):
     """Display data table with download options."""
     st.markdown("#### 📋 Spectral Data")
     
     # Prepare display columns
     display_cols = ['Nanometers', 'Absorbance']
-    if 'Absorbance_per_cm' in df_result.columns:
-        display_cols.append('Absorbance_per_cm')
     if 'Absorbance_Smoothed' in df_result.columns:
         display_cols.append('Absorbance_Smoothed')
     
@@ -837,24 +832,22 @@ def display_data_table(df_result):
         height=400
     )
     
-    # Download buttons
-    col1, col2 = st.columns(2)
-    with col1:
+    # Download button - automatically uses filtered data when range is set
+    if st.session_state.get('plot_range'):
+        min_wl, max_wl = st.session_state.plot_range
+        filtered_data = df_result[
+            (df_result['Nanometers'] >= min_wl) & 
+            (df_result['Nanometers'] <= max_wl)
+        ]
         create_download_button(
-            df_result, "Download All Data", 
-            "absorbance_data.csv", "full_data"
+            filtered_data, f"Download Data ({min_wl:.0f}-{max_wl:.0f} nm)",
+            f"{filename_base}.csv", "data_download"
         )
-    with col2:
-        if st.session_state.get('plot_range'):
-            min_wl, max_wl = st.session_state.plot_range
-            filtered_data = df_result[
-                (df_result['Nanometers'] >= min_wl) & 
-                (df_result['Nanometers'] <= max_wl)
-            ]
-            create_download_button(
-                filtered_data, "Download Filtered Data",
-                "absorbance_filtered.csv", "filtered_data"
-            )
+    else:
+        create_download_button(
+            df_result, "Download Data", 
+            f"{filename_base}.csv", "data_download"
+        )
 
 def display_raw_spectra(df_result):
     """Display raw spectral data plots."""
@@ -886,7 +879,7 @@ def display_raw_spectra(df_result):
     
     st.plotly_chart(fig, use_container_width=True)
 
-def display_peak_analysis(df_result, peak_info):
+def display_peak_analysis(df_result, peak_info, filename_base="absorbance_data"):
     """Display peak analysis results."""
     st.markdown("#### 🎯 Peak Detection Results")
     
@@ -920,13 +913,13 @@ def display_peak_analysis(df_result, peak_info):
            
         create_download_button(
             peak_df_filtered, "Download Peak Data",
-            "peak_analysis.csv", "peak_data"
+            f"{filename_base}_peaks.csv", "peak_data"
         )
     else:
         st.dataframe(peak_df, use_container_width=True)
         create_download_button(
             peak_df, "Download Peak Data",
-            "peak_analysis.csv", "peak_data"
+            f"{filename_base}_peaks.csv", "peak_data"
         )
     
     # Peak statistics
