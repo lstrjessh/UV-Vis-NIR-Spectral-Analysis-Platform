@@ -83,7 +83,7 @@ class CalibrationApp:
             "🔬 Preprocessing", 
             "🤖 Model Training",
             "📊 Results & Analysis"
-        ])
+        ]) 
         
         with tab1:
             self._render_data_loading()
