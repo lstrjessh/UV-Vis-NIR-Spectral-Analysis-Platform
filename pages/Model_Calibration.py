@@ -13,9 +13,9 @@ from typing import Dict, List, Optional, Any
 import warnings
 warnings.filterwarnings('ignore')
 
-# Add calibration_v2 to path
+# Add calibration to path
 import sys
-sys.path.append(str(Path(__file__).parent))
+sys.path.append(str(Path(__file__).parent.parent))
 
 # Page configuration
 st.set_page_config(
@@ -29,25 +29,25 @@ st.set_page_config(
 @st.cache_resource
 def get_model_factory():
     """Get cached ModelFactory instance."""
-    from calibration_v2.models import ModelFactory
+    from calibration.models import ModelFactory
     return ModelFactory()
 
 @st.cache_resource
 def get_model_registry():
     """Get cached ModelRegistry instance."""
-    from calibration_v2.models import ModelRegistry
+    from calibration.models import ModelRegistry
     return ModelRegistry()
 
 @st.cache_resource
 def get_file_loader():
     """Get cached StreamlitFileLoader instance."""
-    from calibration_v2.data import StreamlitFileLoader
+    from calibration.data import StreamlitFileLoader
     return StreamlitFileLoader()
 
 @st.cache_resource
 def get_cache_manager():
     """Get cached CacheManager instance."""
-    from calibration_v2.data import CacheManager
+    from calibration.data import CacheManager
     return CacheManager()
 
 # Initialize session state
@@ -302,7 +302,7 @@ class CalibrationApp:
             if st.button("Apply Preprocessing", type="primary"):
                 with st.spinner("Preprocessing data..."):
                     # Lazy import
-                    from calibration_v2.data import StandardPreprocessor
+                    from calibration.data import StandardPreprocessor
                     
                     preprocessor = StandardPreprocessor(
                         smoothing=smoothing,
@@ -446,7 +446,7 @@ class CalibrationApp:
     def _train_models(self, dataset, train_split: float):
         """Train selected models."""
         # Lazy import
-        from calibration_v2.core import ModelConfig
+        from calibration.core import ModelConfig
         from sklearn.model_selection import train_test_split
         
         # Prepare data
