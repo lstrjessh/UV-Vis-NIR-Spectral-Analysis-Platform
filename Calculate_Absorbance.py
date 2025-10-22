@@ -22,6 +22,7 @@ DEFAULT_SPECTRUM_MIN = 350
 DEFAULT_SPECTRUM_MAX = 800
 EPSILON = 1e-10
 MAX_FILE_SIZE_MB = 50
+
 SUPPORTED_EXTENSIONS = ["txt", "csv", "dat"]
 
 # --- Session State Initialization ---
