@@ -2616,7 +2616,7 @@ def display_model_info(model_data: Dict):
         except Exception:
             pass
     else:
-        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+        st.dataframe(summary_df, width='stretch', hide_index=True)
     
     # Show best model equation
     if best_model in models:
@@ -2866,7 +2866,7 @@ def display_predictions(predictions: List[Dict], model_data: Dict):
     if has_expected_values:
         st.info("✨ indicates expected concentration was auto-detected from filename")
     
-    st.dataframe(summary_df, use_container_width=True, hide_index=True)
+    st.dataframe(summary_df, width='stretch', hide_index=True)
     
     # Export predictions
     if summary_data:
@@ -3064,7 +3064,7 @@ def display_batch_results():
     if has_expected_values:
         st.info("✨ indicates expected concentration was auto-detected from filename | Percentages show error relative to expected value")
     
-    st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+    st.dataframe(comparison_df, width='stretch', hide_index=True)
     
     # Export batch results
     csv_data = comparison_df.to_csv(index=False)
@@ -3129,7 +3129,7 @@ def display_batch_results():
     metrics_df = pd.DataFrame(metrics_rows)
     st.markdown("#### 📏 Model Metrics Comparison")
     if not metrics_df.empty:
-        st.dataframe(metrics_df, use_container_width=True, hide_index=True)
+        st.dataframe(metrics_df, width='stretch', hide_index=True)
         # Quick bar charts for R² and RMSE
         try:
             fig_r2 = go.Figure()

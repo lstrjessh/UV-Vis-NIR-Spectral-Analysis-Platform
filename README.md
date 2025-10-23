@@ -1,6 +1,6 @@
 # Spectral Analysis Platform
 
-A web-based platform for spectroscopic data analysis and machine learning model calibration.
+A cross-platform application for spectroscopic data analysis and machine learning model calibration.
 
 ## Features
 
@@ -23,7 +23,7 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-# Run the application
+# Run as web application
 streamlit run main.py
 ```
 
@@ -44,7 +44,7 @@ See `requirements.txt` for complete list of dependencies.
 
 ```
 thesis_webapp/
-├── main.py                 # Main application entry point
+├── main.py                 # Main application entry point   # Build script for executables
 ├── pages/                  # Streamlit pages
 │   ├── Calculate_Absorbance.py
 │   ├── Model_Calibration.py
