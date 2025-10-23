@@ -1,6 +1,4 @@
-# Requirements for the thesis_webapp project
-
-# Core dependencies
+# Core dependencies (required)
 streamlit>=1.28.0
 pandas>=2.0.0
 numpy>=1.24.0
@@ -8,39 +6,18 @@ scipy>=1.10.0
 scikit-learn>=1.3.0
 plotly>=5.15.0
 
-# Optimization
+# Optimization (required)
 optuna>=3.0.0
-scikit-optimize>=0.9.0  # Optional: for advanced Bayesian optimization
 
-# Machine Learning Models
-xgboost>=1.7.0  # For XGBoost models
-lightgbm>=3.3.0  # Optional: for LightGBM models
+# Machine Learning Models (required)
+xgboost>=1.7.0
 
-# Deep Learning (Optional but recommended)
-torch>=2.0.0  # For neural network models
-torchvision>=0.15.0  # For additional PyTorch utilities
+# Deep Learning (required for neural network models)
+torch>=2.0.0
 
-# Data Processing
-openpyxl>=3.1.0  # For Excel export
-xlsxwriter>=3.1.0  # Alternative Excel writer
-joblib>=1.3.0  # For model serialization
-h5py>=3.9.0  # Optional: for HDF5 data storage
+# Model Serialization (required)
+joblib>=1.3.0
 
-# Advanced Signal Processing (Optional)
-pywavelets>=1.4.0  # For wavelet denoising
-
-# Model Deployment (Optional)
-onnx>=1.14.0  # For ONNX model export
-onnxruntime>=1.15.0  # For ONNX model inference
-skl2onnx>=1.15.0  # For sklearn to ONNX conversion
-
-# Desktop Application (Optional)
-PyQt6>=6.5.0  # For desktop launcher
-PyQt6-WebEngine>=6.5.0  # Optional: for embedded browser view
-pyinstaller>=5.13.0  # For building standalone executables
-
-# Development Tools (Optional)
-pytest>=7.4.0  # For testing
-black>=23.0.0  # For code formatting
-mypy>=1.5.0  # For type checking
-flake8>=6.1.0  # For linting
+# Optional: ONNX model export/inference (uncomment if needed)
+# onnxruntime>=1.15.0
+# skl2onnx>=1.15.0
