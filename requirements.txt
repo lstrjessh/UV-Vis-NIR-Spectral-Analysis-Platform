@@ -34,6 +34,11 @@ onnx>=1.14.0  # For ONNX model export
 onnxruntime>=1.15.0  # For ONNX model inference
 skl2onnx>=1.15.0  # For sklearn to ONNX conversion
 
+# Desktop Application (Optional)
+PyQt6>=6.5.0  # For desktop launcher
+PyQt6-WebEngine>=6.5.0  # Optional: for embedded browser view
+pyinstaller>=5.13.0  # For building standalone executables
+
 # Development Tools (Optional)
 pytest>=7.4.0  # For testing
 black>=23.0.0  # For code formatting

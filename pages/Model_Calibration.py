@@ -408,7 +408,7 @@ class CalibrationApp:
                 })
             
             df_results = pd.DataFrame(results_data)
-            st.dataframe(df_results, use_container_width=True)
+            st.dataframe(df_results, width='stretch')
             
             # Best model
             best_model = max(st.session_state.model_results.items(), 
@@ -572,7 +572,8 @@ class CalibrationApp:
         model_name = st.selectbox(
             "Select Model",
             list(st.session_state.model_results.keys()),
-            format_func=lambda x: x.upper()
+            format_func=lambda x: x.upper(),
+            key="prediction_analysis_model_select"
         )
         
         result = st.session_state.model_results[model_name]
@@ -658,7 +659,8 @@ class CalibrationApp:
         model_name = st.selectbox(
             "Select Model",
             list(models_with_importance.keys()),
-            format_func=lambda x: x.upper()
+            format_func=lambda x: x.upper(),
+            key="feature_importance_model_select"
         )
         
         result = models_with_importance[model_name]

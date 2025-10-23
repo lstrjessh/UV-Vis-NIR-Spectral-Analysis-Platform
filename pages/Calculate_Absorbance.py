@@ -834,7 +834,7 @@ def display_data_table(df_result, filename_base="absorbance_data"):
     # Display table
     st.dataframe(
         df_result[display_cols].round(6),
-        use_container_width=True,
+        width='stretch',
         height=400
     )
     
@@ -919,14 +919,14 @@ def display_peak_analysis(df_result, peak_info, filename_base="absorbance_data")
             (peak_df['Wavelength (nm)'] <= max_wl)
         ]
         st.markdown(f"**Peaks in range {min_wl:.0f}-{max_wl:.0f} nm:**")
-        st.dataframe(peak_df_filtered, use_container_width=True)
+        st.dataframe(peak_df_filtered, width='stretch')
            
         create_download_button(
             peak_df_filtered, "Download Peak Data",
             f"{filename_base}_peaks.csv", "peak_data"
         )
     else:
-        st.dataframe(peak_df, use_container_width=True)
+        st.dataframe(peak_df, width='stretch')
         create_download_button(
             peak_df, "Download Peak Data",
             f"{filename_base}_peaks.csv", "peak_data"
