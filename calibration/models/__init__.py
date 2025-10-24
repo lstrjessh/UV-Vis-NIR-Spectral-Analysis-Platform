@@ -3,8 +3,8 @@ Models module with optimized implementations.
 """
 
 from .registry import ModelRegistry, ModelFactory
-from .linear_models import PLSRModel, RidgeModel, LassoModel
-from .ensemble_models import RandomForestModel, XGBoostModel, GradientBoostingModel
+from .linear_models import PLSRModel, RidgeModel, LassoModel, ElasticNetModel
+from .ensemble_models import RandomForestModel, GradientBoostingModel
 from .neural_models import MLPModel, CNN1DModel
 from .svm_models import SVRModel
 
@@ -20,8 +20,10 @@ def register_default_models():
     
     # Ensemble models
     registry.register('random_forest', RandomForestModel)
-    registry.register('xgboost', XGBoostModel)
     registry.register('gradient_boosting', GradientBoostingModel)
+    
+    # Linear models with regularization
+    registry.register('elastic_net', ElasticNetModel)
     
     # Neural models
     registry.register('mlp', MLPModel)
@@ -42,8 +44,8 @@ __all__ = [
     'RidgeModel',
     'LassoModel',
     'RandomForestModel',
-    'XGBoostModel',
     'GradientBoostingModel',
+    'ElasticNetModel',
     'MLPModel',
     'CNN1DModel',
     'SVRModel'

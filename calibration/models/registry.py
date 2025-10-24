@@ -219,14 +219,12 @@ class ModelFactory:
                 except ImportError:
                     return False
             
-            if 'xgboost' in model_name.lower():
-                try:
-                    import xgboost
-                    return True
-                except ImportError:
-                    return False
-            
-            return True
+            # Check for sklearn dependencies (all our models use sklearn)
+            try:
+                import sklearn
+                return True
+            except ImportError:
+                return False
             
         except:
             return False

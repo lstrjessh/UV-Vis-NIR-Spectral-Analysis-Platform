@@ -6,7 +6,7 @@ import numpy as np
 from typing import Dict, Any, Optional, List
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, KFold
 import time
 import warnings
 warnings.filterwarnings('ignore')
@@ -103,16 +103,20 @@ class MLPModel(BaseModel):
         metrics = self.calculate_metrics(y, y_pred, X)
         
         # Cross-validation
-        if self.config.cv_folds > 1:
-            cv_scores = cross_val_score(
-                self.model, X_scaled, y,
-                cv=min(self.config.cv_folds, len(y) // 2),
-                scoring='r2'
-            )
-            metrics.cv_scores = cv_scores.tolist()
-            metrics.cv_mean = float(np.mean(cv_scores))
-            metrics.cv_std = float(np.std(cv_scores))
-        
+        if self.config.cv_folds > 1 and len(y) >= self.config.cv_folds:
+            try:
+                cv_scores = cross_val_score(
+                    self.model, X_scaled, y,
+                    cv=min(self.config.cv_folds, len(y) // 2 if len(y) // 2 > 1 else 2),
+                    scoring='r2',
+                    n_jobs=-1
+                )
+                metrics.cv_scores = cv_scores.tolist()
+                metrics.cv_mean = float(np.mean(cv_scores))
+                metrics.cv_std = float(np.std(cv_scores))
+            except Exception as e:
+                print(f"MLP CV failed: {e}")
+
         metrics.training_time = time.time() - start_time
         metrics.n_iterations = self.model.n_iter_
         
@@ -349,6 +353,64 @@ class CNN1DModel(BaseModel):
         
         # Calculate metrics
         metrics = self.calculate_metrics(y, y_pred, X)
+        
+        # Cross-validation for CNN model
+        # For small datasets, use fewer folds or skip CV
+        n_samples = len(y)
+        if n_samples < 20:
+            # Too small for meaningful CV
+            metrics.cv_scores = None
+            metrics.cv_mean = None
+            metrics.cv_std = None
+        elif self.config.cv_folds > 1 and n_samples >= self.config.cv_folds:
+            if self.torch_available:
+                from sklearn.metrics import r2_score
+                import torch
+                
+                cv_scores = []
+                kf = KFold(n_splits=self.config.cv_folds, shuffle=True, random_state=self.config.random_state)
+
+                for train_idx, val_idx in kf.split(X_scaled):
+                    X_train_cv, X_val_cv = X_scaled[train_idx], X_scaled[val_idx]
+                    y_train_cv, y_val_cv = y[train_idx], y[val_idx]
+
+                    # Build and train a new model for each fold
+                    cv_model = self._build_pytorch_model(X_scaled.shape[1], **optimal_params)
+                    cv_model = self._train_pytorch_model(cv_model, X_train_cv, y_train_cv, **optimal_params)
+                    
+                    # Evaluate
+                    cv_model.eval()
+                    with torch.no_grad():
+                        X_val_tensor = torch.FloatTensor(X_val_cv)
+                        y_pred_cv = cv_model(X_val_tensor).numpy()
+                    
+                    cv_scores.append(r2_score(y_val_cv, y_pred_cv))
+                
+                if cv_scores:
+                    metrics.cv_scores = cv_scores
+                    metrics.cv_mean = float(np.mean(cv_scores))
+                    metrics.cv_std = float(np.std(cv_scores))
+            else:
+                # Fallback CV for MLP
+                try:
+                    cv_model = self._build_model(X_scaled.shape[1], **optimal_params)
+                    cv_scores = cross_val_score(
+                        cv_model, X_scaled, y,
+                        cv=min(self.config.cv_folds, len(y) // 2 if len(y) // 2 > 1 else 2),
+                        scoring='r2',
+                        n_jobs=-1
+                    )
+                    metrics.cv_scores = cv_scores.tolist()
+                    metrics.cv_mean = float(np.mean(cv_scores))
+                    metrics.cv_std = float(np.std(cv_scores))
+                except Exception as e:
+                    print(f"CNN (MLP fallback) CV failed: {e}")
+        else:
+            # No CV performed
+            metrics.cv_scores = None
+            metrics.cv_mean = None
+            metrics.cv_std = None
+
         metrics.training_time = time.time() - start_time
         
         self.is_fitted = True
