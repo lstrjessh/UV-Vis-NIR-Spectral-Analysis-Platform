@@ -5,7 +5,7 @@ Optimized linear model implementations.
 import numpy as np
 from typing import Dict, Any
 from sklearn.cross_decomposition import PLSRegression
-from sklearn.linear_model import Ridge, Lasso
+from sklearn.linear_model import Ridge, Lasso, ElasticNet
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import cross_val_score
 import time
@@ -481,5 +481,156 @@ class LassoModel(BaseModel):
         if not self.is_fitted:
             raise ValueError("Model must be fitted before prediction")
         
+        X_scaled = self.scaler.transform(X)
+        return self.model.predict(X_scaled)
+
+
+class ElasticNetModel(BaseModel):
+    """Elastic Net regression with L1 and L2 regularization."""
+    
+    def __init__(self, config: ModelConfig):
+        super().__init__(config)
+        self.scaler = StandardScaler()
+        
+    def _build_model(self, **params) -> ElasticNet:
+        """Build Elastic Net model."""
+        return ElasticNet(
+            alpha=params.get('alpha', 1.0),
+            l1_ratio=params.get('l1_ratio', 0.5),
+            max_iter=params.get('max_iter', 1000),
+            tol=params.get('tol', 0.001),
+            random_state=self.config.random_state
+        )
+    
+    def _optimize_hyperparameters(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+        """Optimize Elastic Net hyperparameters."""
+        
+        # Scale data for optimization
+        X_scaled = self.scaler.fit_transform(X)
+        
+        optimizer = OptunaOptimizer(
+            n_trials=self.config.n_trials,
+            random_state=self.config.random_state
+        )
+        
+        def objective(trial):
+            params = {
+                'alpha': trial.suggest_float('alpha', 0.001, 10.0, log=True),
+                'l1_ratio': trial.suggest_float('l1_ratio', 0.0, 1.0),
+                'max_iter': trial.suggest_int('max_iter', 1000, 5000),
+                'tol': trial.suggest_float('tol', 1e-5, 1e-2, log=True)
+            }
+            
+            model = self._build_model(**params)
+            
+            # Use cross-validation for proper evaluation
+            from sklearn.model_selection import cross_val_score
+            n_folds = min(self.config.cv_folds, len(y) // 2)
+            if n_folds < 2:
+                n_folds = 2
+            
+            try:
+                cv_scores = cross_val_score(
+                    model, X_scaled, y,
+                    cv=n_folds,
+                    scoring='r2',
+                    n_jobs=1
+                )
+                score = np.mean(cv_scores)
+                if np.isnan(score) or np.isinf(score):
+                    return -999.0
+                return score
+            except Exception as e:
+                print(f"Elastic Net CV failed: {e}")
+                return -999.0
+        
+        try:
+            best_params = optimizer.optimize(objective, direction='maximize')
+            return best_params
+        except Exception as e:
+            print(f"Optimization failed: {str(e)}. Using default parameters.")
+            return {
+                'alpha': 1.0,
+                'l1_ratio': 0.5,
+                'max_iter': 1000,
+                'tol': 0.001
+            }
+    
+    def fit(self, X: np.ndarray, y: np.ndarray, **kwargs) -> ModelResult:
+        """Train Elastic Net model."""
+        start_time = time.time()
+        
+        # Optimize hyperparameters
+        if self.config.verbose:
+            print("Optimizing Elastic Net hyperparameters...")
+        
+        optimal_params = self._optimize_hyperparameters(X, y)
+        
+        # Scale data for training
+        X_scaled = self.scaler.fit_transform(X)
+        
+        # Build and train final model
+        self.model = self._build_model(**optimal_params)
+        self.model.fit(X_scaled, y)
+        
+        # Make predictions
+        y_pred = self.model.predict(X_scaled)
+        
+        # Calculate metrics
+        metrics = self.calculate_metrics(y, y_pred, X)
+        
+        # Cross-validation
+        if self.config.cv_folds > 1:
+            n_folds = min(self.config.cv_folds, len(y) // 2)
+            if n_folds < 2:
+                n_folds = 2
+            
+            try:
+                cv_model = self._build_model(**optimal_params)
+                cv_scores = cross_val_score(
+                    cv_model, X_scaled, y,
+                    cv=n_folds,
+                    scoring='r2',
+                    n_jobs=1
+                )
+                if not np.any(np.isnan(cv_scores)):
+                    metrics.cv_scores = cv_scores.tolist()
+                    metrics.cv_mean = float(np.mean(cv_scores))
+                    metrics.cv_std = float(np.std(cv_scores))
+                else:
+                    metrics.cv_scores = None
+                    metrics.cv_mean = None
+                    metrics.cv_std = None
+            except Exception:
+                metrics.cv_scores = None
+                metrics.cv_mean = None
+                metrics.cv_std = None
+        
+        metrics.training_time = time.time() - start_time
+        
+        # Feature importance (coefficients)
+        feature_importance = {
+            f'feature_{i}': float(abs(self.model.coef_[i]))
+            for i in range(len(self.model.coef_))
+        }
+        
+        self.is_fitted = True
+        
+        return ModelResult(
+            model=self.model,
+            metrics=metrics,
+            config=self.config,
+            predictions=y_pred,
+            residuals=y - y_pred,
+            feature_importance=feature_importance,
+            hyperparameters=optimal_params
+        )
+    
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Make predictions."""
+        if not self.is_fitted:
+            raise ValueError("Model must be fitted before prediction")
+        
+        # Scale input data before prediction
         X_scaled = self.scaler.transform(X)
         return self.model.predict(X_scaled)

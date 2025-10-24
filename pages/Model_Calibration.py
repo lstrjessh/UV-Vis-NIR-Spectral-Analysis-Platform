@@ -26,15 +26,13 @@ st.set_page_config(
 )
 
 # Cached resource loaders
-@st.cache_resource
 def get_model_factory():
-    """Get cached ModelFactory instance."""
+    """Get ModelFactory instance."""
     from calibration.models import ModelFactory
     return ModelFactory()
 
-@st.cache_resource
 def get_model_registry():
-    """Get cached ModelRegistry instance."""
+    """Get ModelRegistry instance."""
     from calibration.models import ModelRegistry
     return ModelRegistry()
 
@@ -83,7 +81,7 @@ class CalibrationApp:
             "🔬 Preprocessing", 
             "🤖 Model Training",
             "📊 Results & Analysis"
-        ]) 
+        ])
         
         with tab1:
             self._render_data_loading()
@@ -114,8 +112,8 @@ class CalibrationApp:
             available_models = self.factory.available_models()
             
             model_groups = {
-                'Linear': ['plsr', 'ridge', 'lasso'],
-                'Ensemble': ['random_forest', 'xgboost', 'gradient_boosting'],
+                'Linear': ['plsr', 'ridge', 'lasso', 'elastic_net'],
+                'Ensemble': ['random_forest', 'gradient_boosting'],
                 'Neural': ['mlp', 'cnn1d'],
                 'Kernel': ['svr']
             }
@@ -126,7 +124,7 @@ class CalibrationApp:
                 for model in models:
                     model_info = next((m for m in available_models if m['name'] == model), None)
                     if model_info and model_info['available']:
-                        if st.checkbox(f"{model.upper()}", value=model in ['plsr', 'random_forest'], key=f"cb_{model}"):
+                        if st.checkbox(f"{model.upper()}", value=model in ['plsr', 'random_forest', 'elastic_net'], key=f"cb_{model}"):
                             selected_models.append(model)
                     else:
                         st.checkbox(f"{model.upper()} (Not Available)", value=False, disabled=True, key=f"cb_{model}")
@@ -378,7 +376,7 @@ class CalibrationApp:
             return
         
         # Training controls
-        col1, col2, col3 = st.columns([2, 2, 1])
+        col1, col2 = st.columns([2, 2])
         
         with col1:
             st.info(f"**Selected Models:** {', '.join([m.upper() for m in st.session_state.selected_models])}")
@@ -386,34 +384,56 @@ class CalibrationApp:
         with col2:
             train_split = st.slider("Training Set Size", 0.5, 0.9, 0.8, 0.05)
         
+        # Splitting method selection
+        col3, col4 = st.columns([2, 1])
+        
         with col3:
+            split_method = st.selectbox(
+                "Data Splitting Method",
+                options=["kennard_stone", "random"],
+                index=0,
+                format_func=lambda x: {
+                    "kennard_stone": "🎯 Kennard-Stone (Recommended for Spectroscopy)",
+                    "random": "🎲 Random Split"
+                }[x],
+                help="Kennard-Stone ensures uniform sample distribution across feature space, ideal for spectroscopic calibration."
+            )
+        
+        with col4:
             if st.button("🚀 Train Models", type="primary"):
-                self._train_models(dataset, train_split)
+                self._train_models(dataset, train_split, split_method)
         
         # Progress and results
         if st.session_state.model_results:
             st.markdown("---")
             st.subheader("Training Results")
             
-            # Create results DataFrame
+            # Create results DataFrame with both training and test metrics
             results_data = []
             for name, result in st.session_state.model_results.items():
+                # Use TEST metrics instead of training metrics to avoid showing overfitting
+                test_r2 = result.test_metrics.r2 if hasattr(result, 'test_metrics') else result.metrics.r2
+                test_rmse = result.test_metrics.rmse if hasattr(result, 'test_metrics') else result.metrics.rmse
+                test_mae = result.test_metrics.mae if hasattr(result, 'test_metrics') else result.metrics.mae
+                
                 results_data.append({
                     'Model': name.upper(),
-                    'R²': f"{result.metrics.r2:.4f}",
-                    'RMSE': f"{result.metrics.rmse:.4f}",
-                    'MAE': f"{result.metrics.mae:.4f}",
+                    'Train R²': f"{result.metrics.r2:.4f}",
+                    'Test R²': f"{test_r2:.4f}",
+                    'RMSE': f"{test_rmse:.4f}",
+                    'MAE': f"{test_mae:.4f}",
                     'CV Score': f"{result.metrics.cv_mean:.4f} ± {result.metrics.cv_std:.4f}" if result.metrics.cv_mean else "N/A",
                     'Time (s)': f"{result.metrics.training_time:.2f}"
                 })
             
             df_results = pd.DataFrame(results_data)
-            st.dataframe(df_results, width='stretch')
+            st.dataframe(df_results, use_container_width=True)
             
-            # Best model
+            # Best model based on TEST performance
             best_model = max(st.session_state.model_results.items(), 
-                           key=lambda x: x[1].metrics.r2)
-            st.success(f"🏆 Best Model: **{best_model[0].upper()}** (R² = {best_model[1].metrics.r2:.4f})")
+                           key=lambda x: x[1].test_metrics.r2 if hasattr(x[1], 'test_metrics') else x[1].metrics.r2)
+            best_r2 = best_model[1].test_metrics.r2 if hasattr(best_model[1], 'test_metrics') else best_model[1].metrics.r2
+            st.success(f"🏆 Best Model: **{best_model[0].upper()}** (Test R² = {best_r2:.4f})")
     
     def _render_results(self):
         """Render results and analysis."""
@@ -443,11 +463,13 @@ class CalibrationApp:
         with tab4:
             self._render_export()
     
-    def _train_models(self, dataset, train_split: float):
+    def _train_models(self, dataset, train_split: float, split_method: str = "kennard_stone"):
         """Train selected models."""
         # Lazy import
+        import numpy as np
         from calibration.core import ModelConfig
         from sklearn.model_selection import train_test_split
+        from utils.shared_utils import kennard_stone_split
         
         # Prepare data
         X, y, wavelengths = dataset.to_matrix()
@@ -456,10 +478,45 @@ class CalibrationApp:
             st.error("No concentration data available for training.")
             return
         
-        # Split data
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, train_size=train_split, random_state=42
-        )
+        # Data validation and debugging
+        n_samples, n_features = X.shape
+        print(f"📊 Data Info: {n_samples} samples, {n_features} features")
+        print(f"📊 Target range: {y.min():.4f} to {y.max():.4f}")
+        print(f"📊 Target mean: {y.mean():.4f}, std: {y.std():.4f}")
+        
+        # Check for challenging dataset characteristics
+        if n_samples < 50:
+            print(f"⚠️ Small dataset detected ({n_samples} samples). Model performance may be limited.")
+        if n_features > n_samples * 5:
+            print(f"⚠️ High-dimensional data detected ({n_features} features vs {n_samples} samples). Consider dimensionality reduction.")
+        if n_samples < 20:
+            print("🚨 Very small dataset! Cross-validation may not be reliable. Consider collecting more data.")
+            
+        # Suggest dimensionality reduction for high-dimensional data
+        if n_features > n_samples * 10:
+            print("💡 Consider using dimensionality reduction (PCA) for better model performance with high-dimensional data.")
+        
+        # Check for data issues
+        if np.isnan(X).any():
+            print("⚠️ Input data contains NaN values")
+        if np.isnan(y).any():
+            print("⚠️ Target data contains NaN values")
+        if np.isinf(X).any():
+            print("⚠️ Input data contains infinite values")
+        if np.isinf(y).any():
+            print("⚠️ Target data contains infinite values")
+        
+        # Split data using selected method
+        if split_method == "kennard_stone":
+            print("🎯 Using Kennard-Stone algorithm for optimal sample selection...")
+            X_train, X_test, y_train, y_test = kennard_stone_split(
+                X, y, train_size=train_split, random_state=42
+            )
+        else:
+            print("🎲 Using random split...")
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, train_size=train_split, random_state=42
+            )
         
         # Progress bar
         progress_bar = st.progress(0, text="Starting training...")
@@ -704,52 +761,217 @@ class CalibrationApp:
         
         st.markdown("")  # Spacer
         
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Create comprehensive results DataFrame
-            results_data = []
-            for name, result in st.session_state.model_results.items():
-                row = {
-                    'Model': name,
-                    'Train_R2': result.metrics.r2,
-                    'Test_R2': result.test_metrics.r2,
-                    'RMSE': result.metrics.rmse,
-                    'MAE': result.metrics.mae,
-                    'Training_Time': result.metrics.training_time
-                }
-                if result.metrics.cv_mean:
-                    row['CV_Mean'] = result.metrics.cv_mean
-                    row['CV_Std'] = result.metrics.cv_std
-                results_data.append(row)
-            
-            df = pd.DataFrame(results_data)
-            csv = df.to_csv(index=False)
-            
-            st.download_button(
-                label="📥 Download Metrics (CSV)",
-                data=csv,
-                file_name=f"{output_filename}.csv",
-                mime="text/csv"
-            )
-        
-        with col2:
-            import pickle
-            
-            # Serialize all models
-            models_dict = {
-                name: result.model 
-                for name, result in st.session_state.model_results.items()
+        # Metrics export
+        st.markdown("#### 📊 Metrics")
+        results_data = []
+        for name, result in st.session_state.model_results.items():
+            row = {
+                'Model': name,
+                'Train_R2': result.metrics.r2,
+                'Test_R2': result.test_metrics.r2,
+                'RMSE': result.metrics.rmse,
+                'MAE': result.metrics.mae,
+                'Training_Time': result.metrics.training_time
             }
+            if result.metrics.cv_mean:
+                row['CV_Mean'] = result.metrics.cv_mean
+                row['CV_Std'] = result.metrics.cv_std
+            results_data.append(row)
+        
+        df = pd.DataFrame(results_data)
+        csv = df.to_csv(index=False)
+        
+        st.download_button(
+            label="📥 Download Metrics (CSV)",
+            data=csv,
+            file_name=f"{output_filename}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+        
+        st.markdown("---")
+        
+        # Individual model exports
+        st.markdown("#### 🤖 Individual Models")
+        
+        # Create columns for individual downloads (2 per row)
+        model_names = list(st.session_state.model_results.keys())
+        cols_per_row = 2
+        
+        for i in range(0, len(model_names), cols_per_row):
+            cols = st.columns(cols_per_row)
+            for j, col in enumerate(cols):
+                if i + j < len(model_names):
+                    model_name = model_names[i + j]
+                    result = st.session_state.model_results[model_name]
+                    
+                    with col:
+                        self._create_model_download_button(
+                            model_name, 
+                            result, 
+                            output_filename
+                        )
+        
+        st.markdown("---")
+        
+        # Download all models
+        st.markdown("#### 📦 Download All")
+        if st.button("📥 Download All Models", type="primary", use_container_width=True):
+            zip_data = self._create_all_models_zip(output_filename)
+            if zip_data:
+                st.download_button(
+                    label="💾 Save ZIP File",
+                    data=zip_data,
+                    file_name=f"{output_filename}_all_models.zip",
+                    mime="application/zip",
+                    use_container_width=True,
+                    key="download_all_zip"
+                )
+    
+    def _create_model_download_button(self, model_name: str, result, base_filename: str):
+        """Create download button for individual model."""
+        import pickle
+        import io
+        
+        try:
+            # Determine model type
+            is_pytorch = hasattr(result.model, 'state_dict')  # PyTorch model
             
-            pickle_bytes = pickle.dumps(models_dict)
+            if is_pytorch:
+                # PyTorch model - use torch.save
+                import torch
+                buffer = io.BytesIO()
+                torch.save({
+                    'model_state_dict': result.model.state_dict(),
+                    'model_class': result.model.__class__.__name__,
+                    'scaler_mean': result.model.scaler.mean_ if hasattr(result.model, 'scaler') else None,
+                    'scaler_scale': result.model.scaler.scale_ if hasattr(result.model, 'scaler') else None,
+                }, buffer)
+                buffer.seek(0)
+                
+                st.download_button(
+                    label=f"📥 {model_name.upper()} (PyTorch)",
+                    data=buffer,
+                    file_name=f"{base_filename}_{model_name}.pth",
+                    mime="application/octet-stream",
+                    key=f"download_{model_name}",
+                    use_container_width=True
+                )
+            else:
+                # Sklearn model - use pickle
+                model_bytes = pickle.dumps(result.model)
+                
+                st.download_button(
+                    label=f"📥 {model_name.upper()} (Pickle)",
+                    data=model_bytes,
+                    file_name=f"{base_filename}_{model_name}.pkl",
+                    mime="application/octet-stream",
+                    key=f"download_{model_name}",
+                    use_container_width=True
+                )
+                
+        except Exception as e:
+            st.error(f"❌ {model_name.upper()}: {str(e)}")
+    
+    def _create_all_models_zip(self, base_filename: str) -> Optional[bytes]:
+        """Create ZIP file containing all models."""
+        import pickle
+        import io
+        import zipfile
+        
+        try:
+            zip_buffer = io.BytesIO()
             
-            st.download_button(
-                label="📥 Download Models (Pickle)",
-                data=pickle_bytes,
-                file_name=f"{output_filename}_models.pkl",
-                mime="application/octet-stream"
-            )
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                # Add metrics CSV
+                results_data = []
+                for name, result in st.session_state.model_results.items():
+                    row = {
+                        'Model': name,
+                        'Train_R2': result.metrics.r2,
+                        'Test_R2': result.test_metrics.r2,
+                        'RMSE': result.metrics.rmse,
+                        'MAE': result.metrics.mae,
+                        'Training_Time': result.metrics.training_time
+                    }
+                    if result.metrics.cv_mean:
+                        row['CV_Mean'] = result.metrics.cv_mean
+                        row['CV_Std'] = result.metrics.cv_std
+                    results_data.append(row)
+                
+                df = pd.DataFrame(results_data)
+                csv_data = df.to_csv(index=False)
+                zip_file.writestr(f"{base_filename}_metrics.csv", csv_data)
+                
+                # Add each model
+                for model_name, result in st.session_state.model_results.items():
+                    try:
+                        is_pytorch = hasattr(result.model, 'state_dict')
+                        
+                        if is_pytorch:
+                            # PyTorch model
+                            import torch
+                            buffer = io.BytesIO()
+                            torch.save({
+                                'model_state_dict': result.model.state_dict(),
+                                'model_class': result.model.__class__.__name__,
+                                'scaler_mean': result.model.scaler.mean_ if hasattr(result.model, 'scaler') else None,
+                                'scaler_scale': result.model.scaler.scale_ if hasattr(result.model, 'scaler') else None,
+                            }, buffer)
+                            zip_file.writestr(
+                                f"models/{model_name}.pth",
+                                buffer.getvalue()
+                            )
+                        else:
+                            # Sklearn model
+                            model_bytes = pickle.dumps(result.model)
+                            zip_file.writestr(
+                                f"models/{model_name}.pkl",
+                                model_bytes
+                            )
+                    except Exception as e:
+                        st.warning(f"⚠️ Could not export {model_name}: {str(e)}")
+                
+                # Add README
+                readme_content = f"""# Calibration Models Export
+                
+## Contents
+- metrics.csv: Performance metrics for all models
+- models/: Directory containing individual model files
+
+## Models Included
+{chr(10).join([f'- {name.upper()}: {type(result.model).__name__}' for name, result in st.session_state.model_results.items()])}
+
+## Loading Models
+
+### Sklearn Models (.pkl)
+```python
+import pickle
+with open('model_name.pkl', 'rb') as f:
+    model = pickle.load(f)
+predictions = model.predict(X_test)
+```
+
+### PyTorch Models (.pth)
+```python
+import torch
+checkpoint = torch.load('model_name.pth')
+# Rebuild model architecture, then:
+model.load_state_dict(checkpoint['model_state_dict'])
+model.eval()
+```
+
+Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}
+"""
+                zip_file.writestr("README.md", readme_content)
+            
+            zip_buffer.seek(0)
+            st.success(f"✅ Successfully packaged {len(st.session_state.model_results)} models!")
+            return zip_buffer.getvalue()
+            
+        except Exception as e:
+            st.error(f"❌ Error creating ZIP file: {str(e)}")
+            return None
     
     def _create_spectral_plot(self, dataset):
         """Create spectral visualization."""

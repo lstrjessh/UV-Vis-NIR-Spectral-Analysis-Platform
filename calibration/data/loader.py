@@ -13,6 +13,7 @@ from ..core.interfaces import IDataLoader
 from ..core.data_structures import SpectralData, CalibrationDataset
 from ..core.exceptions import FileProcessingError, DataValidationError
 import hashlib
+from utils.shared_utils import extract_concentration_from_filename
 
 
 class CSVDataLoader(IDataLoader):
@@ -215,23 +216,8 @@ class CSVDataLoader(IDataLoader):
         return wavelengths, absorbance
     
     def _extract_concentration(self, filename: str) -> Optional[float]:
-        """Extract concentration from filename using various patterns."""
-        patterns = [
-            r'(\d+\.?\d*)\s*(?:mg|ug|g|M|mM|uM|ppm)',  # Number with unit
-            r'c[_=]?(\d+\.?\d*)',                        # c=X or c_X
-            r'conc[_=]?(\d+\.?\d*)',                     # conc=X or conc_X
-            r'_(\d+\.?\d*)_',                            # Number between underscores
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, filename, re.IGNORECASE)
-            if match:
-                try:
-                    return float(match.group(1))
-                except:
-                    continue
-        
-        return None
+        """Extract concentration from filename using shared utility function."""
+        return extract_concentration_from_filename(filename)
     
     def _get_cache_key(self, filepath: Path) -> str:
         """Generate cache key for file."""
