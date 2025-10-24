@@ -7,7 +7,6 @@ A cross-platform application for spectroscopic data analysis and machine learnin
 - **Calculate Absorbance** - Process raw spectral data with dark spectrum correction and smoothing
 - **Model Calibration** - Build ML models (PLSR, SVR, Random Forest, XGBoost, Neural Networks) with automated hyperparameter optimization
 - **Predict Concentration** - Apply trained models to predict analyte concentrations
-- **Provide Feedback** - Submit feedback and suggestions
 
 ## Installation
 
