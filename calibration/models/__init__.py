@@ -3,9 +3,9 @@ Models module with optimized implementations.
 """
 
 from .registry import ModelRegistry, ModelFactory
-from .linear_models import PLSRModel, RidgeModel, LassoModel, ElasticNetModel
-from .ensemble_models import RandomForestModel, GradientBoostingModel
-from .neural_models import MLPModel, CNN1DModel
+from .pipeline_models import PipelinePLSRModel, PipelineRidgeModel, PipelineLassoModel, PipelineElasticNetModel
+from .ensemble_models import RandomForestModel
+from .neural_models import MLPModel
 from .svm_models import SVRModel
 
 # Register default models
@@ -13,21 +13,17 @@ def register_default_models():
     """Register all default models with the global registry."""
     registry = ModelRegistry()
     
-    # Linear models
-    registry.register('plsr', PLSRModel)
-    registry.register('ridge', RidgeModel)
-    registry.register('lasso', LassoModel)
+    # Pipeline models (no data leakage)
+    registry.register('plsr', PipelinePLSRModel)
+    registry.register('ridge', PipelineRidgeModel)
+    registry.register('lasso', PipelineLassoModel)
+    registry.register('elastic_net', PipelineElasticNetModel)
     
     # Ensemble models
     registry.register('random_forest', RandomForestModel)
-    registry.register('gradient_boosting', GradientBoostingModel)
-    
-    # Linear models with regularization
-    registry.register('elastic_net', ElasticNetModel)
     
     # Neural models
     registry.register('mlp', MLPModel)
-    registry.register('cnn1d', CNN1DModel)
     
     # SVM models
     registry.register('svr', SVRModel)
@@ -44,9 +40,7 @@ __all__ = [
     'RidgeModel',
     'LassoModel',
     'RandomForestModel',
-    'GradientBoostingModel',
     'ElasticNetModel',
     'MLPModel',
-    'CNN1DModel',
     'SVRModel'
 ]

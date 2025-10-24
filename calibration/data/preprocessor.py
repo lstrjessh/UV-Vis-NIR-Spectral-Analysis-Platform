@@ -5,7 +5,7 @@ Preprocessing implementations for spectral data.
 from typing import Dict, Any, Optional, Tuple
 import numpy as np
 from scipy import signal
-from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
+# Removed sklearn scalers - no longer needed for sample-wise operations only
 from ..core.interfaces import IPreprocessor
 from ..core.data_structures import SpectralData, CalibrationDataset
 import copy
@@ -19,7 +19,6 @@ class StandardPreprocessor(IPreprocessor):
                  smoothing_window: int = 5,
                  smoothing_polyorder: int = 2,
                  derivative: Optional[int] = None,
-                 normalization: Optional[str] = None,
                  baseline_correction: bool = False):
         """
         Initialize standard preprocessor.
@@ -29,28 +28,15 @@ class StandardPreprocessor(IPreprocessor):
             smoothing_window: Window size for smoothing
             smoothing_polyorder: Polynomial order for smoothing
             derivative: Derivative order (None, 1, or 2)
-            normalization: Normalization method ('standard', 'minmax', 'robust', 'snv')
             baseline_correction: Apply baseline correction
         """
         self.smoothing = smoothing
         self.smoothing_window = smoothing_window
         self.smoothing_polyorder = smoothing_polyorder
         self.derivative = derivative
-        self.normalization = normalization
         self.baseline_correction = baseline_correction
-        
-        # Initialize scalers if needed
-        self._init_scalers()
     
-    def _init_scalers(self):
-        """Initialize normalization scalers."""
-        self.scaler = None
-        if self.normalization == 'standard':
-            self.scaler = StandardScaler()
-        elif self.normalization == 'minmax':
-            self.scaler = MinMaxScaler()
-        elif self.normalization == 'robust':
-            self.scaler = RobustScaler()
+    # Removed _init_scalers method - no longer needed for sample-wise operations only
     
     def preprocess(self, data: SpectralData) -> SpectralData:
         """
@@ -88,9 +74,7 @@ class StandardPreprocessor(IPreprocessor):
                 self.derivative
             )
         
-        # Apply SNV normalization
-        if self.normalization == 'snv':
-            processed.absorbance = self._apply_snv(processed.absorbance)
+        # SNV normalization moved to pipeline scaling
         
         # Update metadata
         processed.metadata['preprocessed'] = True
@@ -108,29 +92,8 @@ class StandardPreprocessor(IPreprocessor):
         Returns:
             Preprocessed dataset
         """
-        # Preprocess each spectrum
+        # Preprocess each spectrum (sample-wise operations only)
         processed_spectra = [self.preprocess(s) for s in dataset.spectra]
-        
-        # Apply matrix-level normalization if needed
-        if self.normalization in ['standard', 'minmax', 'robust']:
-            # First get the matrix without preprocessing to get original shape
-            X_original, y, wavelengths = CalibrationDataset(
-                spectra=processed_spectra,
-                name=dataset.name
-            ).to_matrix(interpolate=True)
-            
-            # Fit and transform
-            if self.scaler is not None:
-                X_scaled = self.scaler.fit_transform(X_original.T).T  # Scale features
-                
-                # Update spectra with scaled values, maintaining original wavelengths
-                for i, spectrum in enumerate(processed_spectra):
-                    # Interpolate scaled values back to original wavelengths if needed
-                    if len(wavelengths) == len(spectrum.wavelengths) and np.allclose(wavelengths, spectrum.wavelengths):
-                        spectrum.absorbance = X_scaled[i]
-                    else:
-                        # Interpolate back to original wavelength grid
-                        spectrum.absorbance = np.interp(spectrum.wavelengths, wavelengths, X_scaled[i])
         
         # Create new dataset
         processed_dataset = CalibrationDataset(
@@ -152,7 +115,6 @@ class StandardPreprocessor(IPreprocessor):
             'smoothing_window': self.smoothing_window if self.smoothing else None,
             'smoothing_polyorder': self.smoothing_polyorder if self.smoothing else None,
             'derivative': self.derivative,
-            'normalization': self.normalization,
             'baseline_correction': self.baseline_correction
         }
     
@@ -193,13 +155,7 @@ class StandardPreprocessor(IPreprocessor):
         else:
             raise ValueError(f"Unsupported derivative order: {order}")
     
-    def _apply_snv(self, absorbance: np.ndarray) -> np.ndarray:
-        """Apply Standard Normal Variate transformation."""
-        mean = np.mean(absorbance)
-        std = np.std(absorbance)
-        if std > 0:
-            return (absorbance - mean) / std
-        return absorbance - mean
+    # SNV method removed - now handled in pipeline scaling
 
 
 class AdvancedPreprocessor(StandardPreprocessor):
@@ -210,7 +166,6 @@ class AdvancedPreprocessor(StandardPreprocessor):
                  smoothing_window: int = 5,
                  smoothing_polyorder: int = 2,
                  derivative: Optional[int] = None,
-                 normalization: Optional[str] = None,
                  baseline_correction: bool = False,
                  msc: bool = False,
                  detrend: bool = False,
@@ -226,7 +181,7 @@ class AdvancedPreprocessor(StandardPreprocessor):
             spike_removal: Remove spikes/outliers
         """
         super().__init__(smoothing, smoothing_window, smoothing_polyorder,
-                        derivative, normalization, baseline_correction)
+                        derivative, baseline_correction)
         
         self.msc = msc
         self.detrend = detrend
@@ -285,9 +240,7 @@ class AdvancedPreprocessor(StandardPreprocessor):
             }
         )
         
-        # Apply final normalization if needed
-        if self.normalization in ['standard', 'minmax', 'robust']:
-            return super().preprocess_dataset(processed_dataset)
+        # No matrix-level normalization - data leakage prevention
         
         return processed_dataset
     

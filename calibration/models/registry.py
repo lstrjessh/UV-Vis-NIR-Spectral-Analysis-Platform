@@ -212,7 +212,7 @@ class ModelFactory:
             model_class = self.registry.get_model_class(model_name)
             
             # Check for specific dependencies
-            if 'neural' in model_name.lower() or 'cnn' in model_name.lower():
+            if 'cnn' in model_name.lower():
                 try:
                     import torch
                     return True
