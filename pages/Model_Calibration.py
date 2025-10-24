@@ -29,6 +29,11 @@ st.set_page_config(
 def get_model_factory():
     """Get ModelFactory instance."""
     from calibration.models import ModelFactory
+    # Force registration of all models to ensure they're available
+    from calibration.models import register_default_models
+    register_default_models()
+    
+    # Create fresh factory
     return ModelFactory()
 
 def get_model_registry():
@@ -61,7 +66,7 @@ def init_session_state():
 init_session_state()
 
 
-class CalibrationApp:
+class CalibrationApp:   
     """Main application class for calibration modeling."""
     
     def __init__(self):
@@ -98,9 +103,7 @@ class CalibrationApp:
     def _render_header(self):
         """Render application header."""
         st.title("Calibration")
-        st.markdown("""        
-        Build and optimize calibration models with automatic hyperparameter tuning and comprehensive performance metrics.
-        """)
+        st.markdown("Build and optimize calibration models with automatic hyperparameter tuning.")
     
     def _render_sidebar(self):
         """Render sidebar configuration."""
@@ -113,18 +116,31 @@ class CalibrationApp:
             
             model_groups = {
                 'Linear': ['plsr', 'ridge', 'lasso', 'elastic_net'],
-                'Ensemble': ['random_forest', 'gradient_boosting'],
-                'Neural': ['mlp', 'cnn1d'],
+                'Ensemble': ['random_forest'],
+                'Neural': ['mlp'],
                 'Kernel': ['svr']
             }
             
             selected_models = []
             for group, models in model_groups.items():
-                st.write(f"**{group} Models**")
+                st.write(f"**{group}**")
                 for model in models:
                     model_info = next((m for m in available_models if m['name'] == model), None)
                     if model_info and model_info['available']:
-                        if st.checkbox(f"{model.upper()}", value=model in ['plsr', 'random_forest', 'elastic_net'], key=f"cb_{model}"):
+                        # Add technical descriptions for each model
+                        model_descriptions = {
+                            'plsr': "Partial Least Squares Regression: Linear method that finds latent variables maximizing covariance between predictors and response. Excellent for multicollinearity and high-dimensional spectral data.",
+                            'ridge': "Ridge Regression: L2-regularized linear regression that shrinks coefficients to prevent overfitting. Robust to multicollinearity in spectral data.",
+                            'lasso': "Lasso Regression: L1-regularized linear regression that performs automatic feature selection by setting some coefficients to zero. Useful for identifying important wavelengths.",
+                            'elastic_net': "Elastic Net: Combines L1 and L2 regularization, balancing feature selection (Lasso) and coefficient shrinkage (Ridge). Optimal for spectral data with correlated features.",
+                            'random_forest': "Random Forest: Ensemble of decision trees using bootstrap aggregation and random feature selection. Non-parametric, handles non-linear relationships and provides feature importance.",
+                            'mlp': "Multi-Layer Perceptron: Feedforward neural network with multiple hidden layers. Captures complex non-linear patterns in spectral data through backpropagation learning.",
+                            'svr': "Support Vector Regression: Kernel-based method that finds optimal hyperplane in high-dimensional feature space. Excellent for non-linear spectral relationships."
+                        }
+                        
+                        if st.checkbox(f"{model.upper()}", value=model in ['plsr', 'random_forest', 'elastic_net'], 
+                                     help=model_descriptions.get(model, "Machine learning model for spectral calibration."), 
+                                     key=f"cb_{model}"):
                             selected_models.append(model)
                     else:
                         st.checkbox(f"{model.upper()} (Not Available)", value=False, disabled=True, key=f"cb_{model}")
@@ -134,37 +150,16 @@ class CalibrationApp:
             st.markdown("---")
             
             # Global settings
-            st.subheader("🎯 Global Settings")
+            st.subheader("Settings")
             
-            cv_folds = st.slider(
-                "Cross-Validation Folds",
-                min_value=2,
-                max_value=10,
-                value=5,
-                help="Number of folds for cross-validation"
-            )
-            
-            optimization_method = st.selectbox(
-                "Optimization Method",
-                ["bayesian", "random_search", "grid_search"],
-                index=0,
-                help="Hyperparameter optimization strategy"
-            )
-            
-            n_trials = st.slider(
-                "Optimization Trials",
-                min_value=10,
-                max_value=100,
-                value=30,
-                step=10,
-                help="Number of hyperparameter configurations to test"
-            )
-            
-            early_stopping = st.checkbox(
-                "Enable Early Stopping",
-                value=True,
-                help="Stop training when performance plateaus"
-            )
+            cv_folds = st.slider("CV Folds", 2, 10, 5, 
+                                help="Cross-validation folds for model evaluation. Higher values provide more robust performance estimates but increase computation time. Recommended: 5-7 for spectral data.")
+            optimization_method = st.selectbox("Optimization", ["bayesian", "random_search", "grid_search"], 0,
+                                             help="Hyperparameter optimization strategy. Bayesian: Uses Gaussian Process to model parameter-performance relationship. Random Search: Random sampling of parameter space. Grid Search: Exhaustive search over parameter grid.")
+            n_trials = st.slider("Trials", 10, 100, 30, 10, 
+                               help="Number of optimization trials for Bayesian/Random search. More trials improve parameter optimization but increase computation time. Grid search ignores this setting.")
+            early_stopping = st.checkbox("Early Stopping", True, 
+                                       help="Stop optimization early if no improvement is found. Reduces computation time but may miss optimal parameters in complex parameter spaces.")
             
             # Store in session state
             st.session_state.config = {
@@ -177,17 +172,17 @@ class CalibrationApp:
             st.markdown("---")
             
             # Cache management
-            st.subheader("💾 Cache Management")
+            st.subheader("Cache")
             cache_manager = get_cache_manager()
             cache_stats = cache_manager.get_stats()
-            st.metric("Cache Entries", cache_stats['memory_entries'])
-            st.metric("Cache Size", f"{cache_stats['memory_size_mb']:.2f} MB")
+            st.metric("Entries", cache_stats['memory_entries'])
+            st.metric("Size", f"{cache_stats['memory_size_mb']:.1f} MB")
             
-            if st.button("Clear Cache"):
+            if st.button("Clear"):
                 cache_manager.clear()
                 st.cache_data.clear()
                 st.cache_resource.clear()
-                st.success("Cache cleared!")
+                st.success("Cleared!")
                 st.rerun()
     
     def _render_data_loading(self):
@@ -272,32 +267,23 @@ class CalibrationApp:
         col1, col2 = st.columns([1, 2])
         
         with col1:
-            st.subheader("Preprocessing Options")
+            st.subheader("Options")
             
-            # Preprocessing settings
-            smoothing = st.checkbox("Apply Smoothing", value=False)
-            if smoothing:
-                window_size = st.slider("Window Size", 3, 11, 5, step=2)
-                poly_order = st.slider("Polynomial Order", 1, 5, 2)
-            else:
-                window_size, poly_order = 5, 2
+            smoothing = st.checkbox("Smoothing", False, 
+                                  help="Savitzky-Golay smoothing filter reduces noise while preserving spectral features. Uses polynomial fitting within a moving window to smooth the signal.")
+            window_size = st.slider("Window", 3, 11, 5, 2, 
+                                   help="Window size for Savitzky-Golay smoothing. Must be odd and greater than polynomial order. Larger windows provide more smoothing.") if smoothing else 5
+            poly_order = st.slider("Poly Order", 1, 5, 2, 
+                                  help="Polynomial order for Savitzky-Golay smoothing. Higher orders preserve more spectral features but may overfit noise.") if smoothing else 2
             
-            derivative = st.selectbox(
-                "Derivative",
-                [None, 1, 2],
-                format_func=lambda x: "None" if x is None else f"{x}st derivative" if x == 1 else f"{x}nd derivative"
-            )
+            derivative = st.selectbox("Derivative", [None, 1, 2], 0, 
+                                    format_func=lambda x: "None" if x is None else f"{x}st" if x == 1 else f"{x}nd",
+                                    help="Spectral derivatives enhance resolution and remove baseline effects. 1st derivative removes constant baseline, 2nd derivative removes linear baseline.")
             
-            normalization = st.selectbox(
-                "Normalization",
-                [None, "standard", "minmax", "robust", "snv"],
-                format_func=lambda x: "None" if x is None else x.upper()
-            )
+            baseline_correction = st.checkbox("Baseline Correction", False, 
+                                            help="Asymmetric Least Squares (ALS) baseline correction removes systematic baseline drift and fluorescence effects from spectral data.")
             
-            baseline_correction = st.checkbox("Baseline Correction", value=False)
-            
-            # Apply preprocessing
-            if st.button("Apply Preprocessing", type="primary"):
+            if st.button("Apply", type="primary"):
                 with st.spinner("Preprocessing data..."):
                     # Lazy import
                     from calibration.data import StandardPreprocessor
@@ -307,7 +293,6 @@ class CalibrationApp:
                         smoothing_window=window_size if smoothing else 5,
                         smoothing_polyorder=poly_order if smoothing else 2,
                         derivative=derivative,
-                        normalization=normalization,
                         baseline_correction=baseline_correction
                     )
                     
@@ -376,32 +361,32 @@ class CalibrationApp:
             return
         
         # Training controls
-        col1, col2 = st.columns([2, 2])
+        col1, col2 = st.columns([1, 1])
         
         with col1:
-            st.info(f"**Selected Models:** {', '.join([m.upper() for m in st.session_state.selected_models])}")
+            st.info(f"**Models:** {', '.join([m.upper() for m in st.session_state.selected_models])}")
+            train_split = st.slider("Train Split", 0.5, 0.9, 0.8, 0.05, 
+                                  help="Proportion of data used for training. Higher values use more data for training but less for validation. Recommended: 0.7-0.8 for spectral data.")
         
         with col2:
-            train_split = st.slider("Training Set Size", 0.5, 0.9, 0.8, 0.05)
+            scaler_type = st.selectbox("Scaling", ["standard", "minmax", "robust", "snv"], 0,
+                                     help="Data scaling method applied within the model pipeline to prevent data leakage. Standard: z-score normalization, MinMax: [0,1] scaling, Robust: median-based scaling, SNV: Standard Normal Variate per-sample normalization.")
         
-        # Splitting method selection
+        # Splitting method and train button
         col3, col4 = st.columns([2, 1])
         
         with col3:
             split_method = st.selectbox(
-                "Data Splitting Method",
-                options=["kennard_stone", "random"],
-                index=0,
-                format_func=lambda x: {
-                    "kennard_stone": "🎯 Kennard-Stone (Recommended for Spectroscopy)",
-                    "random": "🎲 Random Split"
-                }[x],
-                help="Kennard-Stone ensures uniform sample distribution across feature space, ideal for spectroscopic calibration."
+                "Split Method",
+                ["kennard_stone", "random"],
+                0,
+                format_func=lambda x: "Kennard-Stone" if x == "kennard_stone" else "Random",
+                help="Data splitting strategy. Kennard-Stone: Selects representative samples maximizing spectral diversity for training set. Random: Random sampling which may not capture spectral variability optimally."
             )
         
         with col4:
-            if st.button("🚀 Train Models", type="primary"):
-                self._train_models(dataset, train_split, split_method)
+            if st.button("Train", type="primary"):
+                self._train_models(dataset, train_split, split_method, scaler_type)
         
         # Progress and results
         if st.session_state.model_results:
@@ -429,11 +414,24 @@ class CalibrationApp:
             df_results = pd.DataFrame(results_data)
             st.dataframe(df_results, use_container_width=True)
             
-            # Best model based on TEST performance
-            best_model = max(st.session_state.model_results.items(), 
-                           key=lambda x: x[1].test_metrics.r2 if hasattr(x[1], 'test_metrics') else x[1].metrics.r2)
-            best_r2 = best_model[1].test_metrics.r2 if hasattr(best_model[1], 'test_metrics') else best_model[1].metrics.r2
-            st.success(f"🏆 Best Model: **{best_model[0].upper()}** (Test R² = {best_r2:.4f})")
+            # Best model based on combined test metrics (R² > RMSE > MAE)
+            best_model_item = max(
+                st.session_state.model_results.items(), 
+                key=lambda item: (
+                    item[1].test_metrics.r2,    # 1. Maximize R²
+                    -item[1].test_metrics.rmse, # 2. Minimize RMSE (by maximizing negative)
+                    -item[1].test_metrics.mae   # 3. Minimize MAE (by maximizing negative)
+                )
+            )
+            
+            # Unpack the best model and its metrics
+            best_name = best_model_item[0]
+            best_metrics = best_model_item[1].test_metrics
+            
+            st.success(
+                f"🏆 Best Model: **{best_name.upper()}** "
+                f"(Test R²={best_metrics.r2:.4f}, RMSE={best_metrics.rmse:.4f}, MAE={best_metrics.mae:.4f})"
+            )
     
     def _render_results(self):
         """Render results and analysis."""
@@ -447,7 +445,7 @@ class CalibrationApp:
         tab1, tab2, tab3, tab4 = st.tabs([
             "Model Comparison",
             "Predictions",
-            "Feature Importance", 
+            "Feature Importance",
             "Export Results"
         ])
         
@@ -463,7 +461,8 @@ class CalibrationApp:
         with tab4:
             self._render_export()
     
-    def _train_models(self, dataset, train_split: float, split_method: str = "kennard_stone"):
+    def _train_models(self, dataset, train_split: float, split_method: str = "kennard_stone", 
+                      scaler_type: str = "standard"):
         """Train selected models."""
         # Lazy import
         import numpy as np
@@ -491,6 +490,12 @@ class CalibrationApp:
             print(f"⚠️ High-dimensional data detected ({n_features} features vs {n_samples} samples). Consider dimensionality reduction.")
         if n_samples < 20:
             print("🚨 Very small dataset! Cross-validation may not be reliable. Consider collecting more data.")
+            
+        # Validate minimum requirements for models
+        min_samples = 3  # Minimum for cross-validation
+        if n_samples < min_samples:
+            st.error(f"Dataset too small: {n_samples} samples. Need at least {min_samples} samples for training.")
+            return
             
         # Suggest dimensionality reduction for high-dimensional data
         if n_features > n_samples * 10:
@@ -538,7 +543,8 @@ class CalibrationApp:
                 
                 # Create and train model
                 model = self.factory.create(model_name, config)
-                result = model.fit(X_train, y_train)
+                result = model.fit(X_train, y_train, 
+                                 scaler_type=scaler_type)
                 
                 # Test set evaluation
                 y_pred_test = model.predict(X_test)
@@ -548,7 +554,14 @@ class CalibrationApp:
                 model_results[model_name] = result
                 
             except Exception as e:
-                st.error(f"Error training {model_name}: {str(e)}")
+                error_msg = str(e)
+                if "scipy.linalg.eigh" in error_msg:
+                    st.error(f"Error training {model_name}: Dataset too small for this model. Try with more data or different model.")
+                elif "Cannot use scipy.linalg.eigh for sparse A with k ≥ N" in error_msg:
+                    st.error(f"Error training {model_name}: Too many components for dataset size. Try reducing components or using more data.")
+                else:
+                    st.error(f"Error training {model_name}: {error_msg}")
+                print(f"Detailed error for {model_name}: {e}")
         
         progress_bar.empty()
         
@@ -748,6 +761,7 @@ class CalibrationApp:
         
         st.plotly_chart(fig, use_container_width=True)
     
+    # UMAP visualization method removed for simplicity
     def _render_export(self):
         """Render export options."""
         st.subheader("Export Results")
