@@ -21,6 +21,7 @@ class SVRModel(BaseModel):
     def __init__(self, config: ModelConfig):
         super().__init__(config)
         self.scaler = StandardScaler()
+        self.y_scaler = StandardScaler()
         
     def _build_model(self, **params) -> SVR:
         """Build SVR model."""
@@ -40,6 +41,7 @@ class SVRModel(BaseModel):
         """Optimize SVR hyperparameters."""
         
         X_scaled = self.scaler.fit_transform(X)
+        y_scaled = self.y_scaler.fit_transform(y.reshape(-1, 1)).ravel()
         
         if self.config.optimization_method == 'random_search':
             optimizer = RandomSearchOptimizer(
@@ -66,7 +68,7 @@ class SVRModel(BaseModel):
                 
                 try:
                     scores = cross_val_score(
-                        model, X_scaled, y,
+                        model, X_scaled, y_scaled,
                         cv=min(self.config.cv_folds, len(y) // 2),
                         scoring='r2'
                     )
@@ -111,7 +113,7 @@ class SVRModel(BaseModel):
                 
                 try:
                     scores = cross_val_score(
-                        model, X_scaled, y,
+                        model, X_scaled, y_scaled,
                         cv=min(self.config.cv_folds, len(y) // 2),
                         scoring='r2'
                     )
@@ -125,8 +127,9 @@ class SVRModel(BaseModel):
         """Train SVR model."""
         start_time = time.time()
         
-        # Scale features
+        # Scale features and targets
         X_scaled = self.scaler.fit_transform(X)
+        y_scaled = self.y_scaler.fit_transform(y.reshape(-1, 1)).ravel()
         
         # Optimize hyperparameters
         if self.config.verbose:
@@ -136,18 +139,19 @@ class SVRModel(BaseModel):
         
         # Build and train final model
         self.model = self._build_model(**optimal_params)
-        self.model.fit(X_scaled, y)
+        self.model.fit(X_scaled, y_scaled)
         
         # Make predictions
-        y_pred = self.model.predict(X_scaled)
+        y_pred_scaled = self.model.predict(X_scaled)
+        y_pred = self.y_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).ravel()
         
-        # Calculate metrics
+        # Calculate metrics using original scale
         metrics = self.calculate_metrics(y, y_pred, X)
         
         # Cross-validation
         if self.config.cv_folds > 1:
             cv_scores = cross_val_score(
-                self.model, X_scaled, y,
+                self.model, X_scaled, y_scaled,
                 cv=min(self.config.cv_folds, len(y) // 2),
                 scoring='r2'
             )
@@ -183,4 +187,6 @@ class SVRModel(BaseModel):
             raise ValueError("Model must be fitted before prediction")
         
         X_scaled = self.scaler.transform(X)
-        return self.model.predict(X_scaled)
+        y_pred_scaled = self.model.predict(X_scaled)
+        # Inverse transform predictions back to original scale
+        return self.y_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).ravel()
