@@ -4,7 +4,7 @@ Models module with optimized implementations.
 
 from .registry import ModelRegistry, ModelFactory
 from .pipeline_models import PipelinePLSRModel, PipelineRidgeModel, PipelineLassoModel, PipelineElasticNetModel
-from .ensemble_models import RandomForestModel
+from .ensemble_models import RandomForestModel, XGBoostModel
 from .neural_models import MLPModel
 from .svm_models import SVRModel
 
@@ -21,6 +21,7 @@ def register_default_models():
     
     # Ensemble models
     registry.register('random_forest', RandomForestModel)
+    registry.register('xgboost', XGBoostModel)
     
     # Neural models
     registry.register('mlp', MLPModel)
@@ -40,6 +41,7 @@ __all__ = [
     'RidgeModel',
     'LassoModel',
     'RandomForestModel',
+    'XGBoostModel',
     'ElasticNetModel',
     'MLPModel',
     'SVRModel'

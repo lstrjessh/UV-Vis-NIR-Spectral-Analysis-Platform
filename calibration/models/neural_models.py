@@ -21,6 +21,7 @@ class MLPModel(BaseModel):
     def __init__(self, config: ModelConfig):
         super().__init__(config)
         self.scaler = StandardScaler()
+        self.y_scaler = StandardScaler()
         
     def _build_model(self, **params) -> MLPRegressor:
         """Build MLP model."""
@@ -46,6 +47,7 @@ class MLPModel(BaseModel):
         
         # Scale data for optimization
         X_scaled = self.scaler.fit_transform(X)
+        y_scaled = self.y_scaler.fit_transform(y.reshape(-1, 1)).ravel()
         
         optimizer = OptunaOptimizer(
             n_trials=self.config.n_trials,
@@ -83,7 +85,7 @@ class MLPModel(BaseModel):
             
             try:
                 cv_scores = cross_val_score(
-                    model, X_scaled, y,
+                    model, X_scaled, y_scaled,
                     cv=n_folds,
                     scoring='r2',
                     n_jobs=1
@@ -127,15 +129,17 @@ class MLPModel(BaseModel):
         
         # Scale data for training
         X_scaled = self.scaler.fit_transform(X)
+        y_scaled = self.y_scaler.fit_transform(y.reshape(-1, 1)).ravel()
         
         # Build and train final model
         self.model = self._build_model(**optimal_params)
-        self.model.fit(X_scaled, y)
+        self.model.fit(X_scaled, y_scaled)
         
         # Make predictions
-        y_pred = self.model.predict(X_scaled)
+        y_pred_scaled = self.model.predict(X_scaled)
+        y_pred = self.y_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).ravel()
         
-        # Calculate metrics
+        # Calculate metrics using original scale
         metrics = self.calculate_metrics(y, y_pred, X)
         
         # Cross-validation
@@ -147,7 +151,7 @@ class MLPModel(BaseModel):
             try:
                 cv_model = self._build_model(**optimal_params)
                 cv_scores = cross_val_score(
-                    cv_model, X_scaled, y,
+                    cv_model, X_scaled, y_scaled,
                     cv=n_folds,
                     scoring='r2',
                     n_jobs=1
@@ -196,4 +200,6 @@ class MLPModel(BaseModel):
         
         # Scale input data before prediction
         X_scaled = self.scaler.transform(X)
-        return self.model.predict(X_scaled)
+        y_pred_scaled = self.model.predict(X_scaled)
+        # Inverse transform predictions back to original scale
+        return self.y_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).ravel()

@@ -116,7 +116,7 @@ class CalibrationApp:
             
             model_groups = {
                 'Linear': ['plsr', 'ridge', 'lasso', 'elastic_net'],
-                'Ensemble': ['random_forest'],
+                'Ensemble': ['random_forest', 'xgboost'],
                 'Neural': ['mlp'],
                 'Kernel': ['svr']
             }
@@ -133,12 +133,13 @@ class CalibrationApp:
                             'ridge': "Ridge Regression: L2-regularized linear regression that shrinks coefficients to prevent overfitting. Robust to multicollinearity in spectral data.",
                             'lasso': "Lasso Regression: L1-regularized linear regression that performs automatic feature selection by setting some coefficients to zero. Useful for identifying important wavelengths.",
                             'elastic_net': "Elastic Net: Combines L1 and L2 regularization, balancing feature selection (Lasso) and coefficient shrinkage (Ridge). Optimal for spectral data with correlated features.",
-                            'random_forest': "Random Forest: Ensemble of decision trees using bootstrap aggregation and random feature selection. Non-parametric, handles non-linear relationships and provides feature importance.",
+                            'random_forest': "Random Forest: Ensemble of decision trees using bootstrap aggregation and random feature selection. Non-parametric, handles non-linear relationships and provides feature importance. ⚠️ No scaling required (tree-based).",
+                            'xgboost': "XGBoost: Extreme Gradient Boosting - Advanced gradient boosting framework with regularization, parallel processing, and early stopping. Excellent for complex non-linear patterns and high-dimensional spectral data with superior performance. ⚠️ No scaling, uses default parameters.",
                             'mlp': "Multi-Layer Perceptron: Feedforward neural network with multiple hidden layers. Captures complex non-linear patterns in spectral data through backpropagation learning.",
                             'svr': "Support Vector Regression: Kernel-based method that finds optimal hyperplane in high-dimensional feature space. Excellent for non-linear spectral relationships."
                         }
                         
-                        if st.checkbox(f"{model.upper()}", value=model in ['plsr', 'random_forest', 'elastic_net'], 
+                        if st.checkbox(f"{model.upper()}", value=model in ['plsr'], 
                                      help=model_descriptions.get(model, "Machine learning model for spectral calibration."), 
                                      key=f"cb_{model}"):
                             selected_models.append(model)
@@ -146,6 +147,12 @@ class CalibrationApp:
                         st.checkbox(f"{model.upper()} (Not Available)", value=False, disabled=True, key=f"cb_{model}")
             
             st.session_state.selected_models = selected_models
+            
+            # Add warnings for models that don't use scaling
+            tree_models = [model for model in selected_models if model in ['xgboost', 'random_forest']]
+            if tree_models:
+                model_names = ', '.join([m.upper() for m in tree_models])
+                st.info(f"ℹ️ **{model_names}**: No scaling required (tree-based)")
             
             st.markdown("---")
             
@@ -170,20 +177,6 @@ class CalibrationApp:
             }
             
             st.markdown("---")
-            
-            # Cache management
-            st.subheader("Cache")
-            cache_manager = get_cache_manager()
-            cache_stats = cache_manager.get_stats()
-            st.metric("Entries", cache_stats['memory_entries'])
-            st.metric("Size", f"{cache_stats['memory_size_mb']:.1f} MB")
-            
-            if st.button("Clear"):
-                cache_manager.clear()
-                st.cache_data.clear()
-                st.cache_resource.clear()
-                st.success("Cleared!")
-                st.rerun()
     
     def _render_data_loading(self):
         """Render data loading interface."""
@@ -365,12 +358,11 @@ class CalibrationApp:
         
         with col1:
             st.info(f"**Models:** {', '.join([m.upper() for m in st.session_state.selected_models])}")
-            train_split = st.slider("Train Split", 0.5, 0.9, 0.8, 0.05, 
-                                  help="Proportion of data used for training. Higher values use more data for training but less for validation. Recommended: 0.7-0.8 for spectral data.")
+            train_split = st.slider("Train Split", 0.5, 0.9, 0.6, 0.05, 
+                                  help="Proportion of data used for training. Higher values use more data for training but less for validation. Recommended: 0.6-0.8 for spectral data.")
         
         with col2:
-            scaler_type = st.selectbox("Scaling", ["standard", "minmax", "robust", "snv"], 0,
-                                     help="Data scaling method applied within the model pipeline to prevent data leakage. Standard: z-score normalization, MinMax: [0,1] scaling, Robust: median-based scaling, SNV: Standard Normal Variate per-sample normalization.")
+            st.info("ℹ️ **Scaling**: StandardScaler used automatically for models that require scaling")
         
         # Splitting method and train button
         col3, col4 = st.columns([2, 1])
@@ -386,7 +378,7 @@ class CalibrationApp:
         
         with col4:
             if st.button("Train", type="primary"):
-                self._train_models(dataset, train_split, split_method, scaler_type)
+                self._train_models(dataset, train_split, split_method)
         
         # Progress and results
         if st.session_state.model_results:
@@ -403,16 +395,17 @@ class CalibrationApp:
                 
                 results_data.append({
                     'Model': name.upper(),
-                    'Train R²': f"{result.metrics.r2:.4f}",
-                    'Test R²': f"{test_r2:.4f}",
-                    'RMSE': f"{test_rmse:.4f}",
-                    'MAE': f"{test_mae:.4f}",
-                    'CV Score': f"{result.metrics.cv_mean:.4f} ± {result.metrics.cv_std:.4f}" if result.metrics.cv_mean else "N/A",
+                    'Train R²': f"{result.metrics.r2:.6f}",
+                    'Test R²': f"{test_r2:.6f}",
+                    'RMSE': f"{test_rmse:.6f}",
+                    'MAE': f"{test_mae:.6f}",
+                    'CV Score': f"{result.metrics.cv_mean:.6f} ± {result.metrics.cv_std:.6f}" if result.metrics.cv_mean else "N/A",
                     'Time (s)': f"{result.metrics.training_time:.2f}"
                 })
             
             df_results = pd.DataFrame(results_data)
             st.dataframe(df_results, use_container_width=True)
+            
             
             # Best model based on combined test metrics (R² > RMSE > MAE)
             best_model_item = max(
@@ -430,7 +423,7 @@ class CalibrationApp:
             
             st.success(
                 f"🏆 Best Model: **{best_name.upper()}** "
-                f"(Test R²={best_metrics.r2:.4f}, RMSE={best_metrics.rmse:.4f}, MAE={best_metrics.mae:.4f})"
+                f"(Test R²={best_metrics.r2:.6f}, RMSE={best_metrics.rmse:.6f}, MAE={best_metrics.mae:.6f})"
             )
     
     def _render_results(self):
@@ -461,8 +454,7 @@ class CalibrationApp:
         with tab4:
             self._render_export()
     
-    def _train_models(self, dataset, train_split: float, split_method: str = "kennard_stone", 
-                      scaler_type: str = "standard"):
+    def _train_models(self, dataset, train_split: float, split_method: str = "kennard_stone"):
         """Train selected models."""
         # Lazy import
         import numpy as np
@@ -544,7 +536,7 @@ class CalibrationApp:
                 # Create and train model
                 model = self.factory.create(model_name, config)
                 result = model.fit(X_train, y_train, 
-                                 scaler_type=scaler_type)
+                                 scaler_type="standard")
                 
                 # Test set evaluation
                 y_pred_test = model.predict(X_test)
@@ -799,8 +791,7 @@ class CalibrationApp:
             label="📥 Download Metrics (CSV)",
             data=csv,
             file_name=f"{output_filename}.csv",
-            mime="text/csv",
-            use_container_width=True
+            mime="text/csv"
         )
         
         st.markdown("---")
@@ -830,7 +821,7 @@ class CalibrationApp:
         
         # Download all models
         st.markdown("#### 📦 Download All")
-        if st.button("📥 Download All Models", type="primary", use_container_width=True):
+        if st.button("📥 Download All Models", type="primary"):
             zip_data = self._create_all_models_zip(output_filename)
             if zip_data:
                 st.download_button(
@@ -838,7 +829,6 @@ class CalibrationApp:
                     data=zip_data,
                     file_name=f"{output_filename}_all_models.zip",
                     mime="application/zip",
-                    use_container_width=True,
                     key="download_all_zip"
                 )
     
@@ -868,8 +858,7 @@ class CalibrationApp:
                     data=buffer,
                     file_name=f"{base_filename}_{model_name}.pth",
                     mime="application/octet-stream",
-                    key=f"download_{model_name}",
-                    use_container_width=True
+                    key=f"download_{model_name}"
                 )
             else:
                 # Sklearn model - use pickle
@@ -880,8 +869,7 @@ class CalibrationApp:
                     data=model_bytes,
                     file_name=f"{base_filename}_{model_name}.pkl",
                     mime="application/octet-stream",
-                    key=f"download_{model_name}",
-                    use_container_width=True
+                    key=f"download_{model_name}"
                 )
                 
         except Exception as e:
