@@ -1,6 +1,6 @@
 # Spectral Analysis Platform
 
-A cross-platform application for spectroscopic data analysis and machine learning model calibration.
+A cross-platform application for spectroscopic data analysis and machine learning model calibration. Primariy developed as a complimentary tool for my proprietary camera-based single-beam transmission grating spectrophotometer.
 
 ## Features
 
