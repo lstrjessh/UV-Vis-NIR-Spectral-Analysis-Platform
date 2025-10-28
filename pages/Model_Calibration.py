@@ -116,9 +116,9 @@ class CalibrationApp:
             
             model_groups = {
                 'Linear': ['plsr', 'ridge', 'lasso', 'elastic_net'],
-                'Ensemble': ['random_forest', 'xgboost'],
-                'Neural': ['mlp'],
-                'Kernel': ['svr']
+                'Ensemble (Tree-Based)': ['random_forest', 'xgboost'],
+                'Neural Networks': ['mlp'],
+                'Kernel-Based': ['svr']
             }
             
             selected_models = []
@@ -161,9 +161,9 @@ class CalibrationApp:
             
             cv_folds = st.slider("CV Folds", 2, 10, 5, 
                                 help="Cross-validation folds for model evaluation. Higher values provide more robust performance estimates but increase computation time. Recommended: 5-7 for spectral data.")
-            optimization_method = st.selectbox("Optimization", ["bayesian", "random_search", "grid_search"], 0,
+            optimization_method = st.selectbox("Hyperparameter Optimization", ["bayesian", "random_search", "grid_search"], 0,
                                              help="Hyperparameter optimization strategy. Bayesian: Uses Gaussian Process to model parameter-performance relationship. Random Search: Random sampling of parameter space. Grid Search: Exhaustive search over parameter grid.")
-            n_trials = st.slider("Trials", 10, 100, 30, 10, 
+            n_trials = st.slider("Optimization Trials", 10, 100, 30, 10, 
                                help="Number of optimization trials for Bayesian/Random search. More trials improve parameter optimization but increase computation time. Grid search ignores this setting.")
             early_stopping = st.checkbox("Early Stopping", True, 
                                        help="Stop optimization early if no improvement is found. Reduces computation time but may miss optimal parameters in complex parameter spaces.")
@@ -308,7 +308,7 @@ class CalibrationApp:
                 )
                 
                 # Original
-                for spectrum in st.session_state.dataset.spectra[:5]:
+                for spectrum in st.session_state.dataset.spectra[:20]:
                     fig.add_trace(
                         go.Scatter(
                             x=spectrum.wavelengths,
@@ -320,7 +320,7 @@ class CalibrationApp:
                     )
                 
                 # Preprocessed
-                for spectrum in st.session_state.preprocessed_dataset.spectra[:5]:
+                for spectrum in st.session_state.preprocessed_dataset.spectra[:20]:
                     fig.add_trace(
                         go.Scatter(
                             x=spectrum.wavelengths,
