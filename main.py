@@ -25,6 +25,10 @@ with col1:
     Process raw spectral data to calculate absorbance spectra with dark spectrum 
     correction, averaging, and smoothing.
     
+    #### 📈 View Spectra
+    Upload and overlay multiple spectrum files with interactive visualization,
+    peak detection, and range controls for detailed analysis.
+    
     #### 🧪 Model Calibration
     Build and optimize machine learning models with multiple algorithms, automated 
     hyperparameter tuning, and cross-validation.
@@ -46,9 +50,10 @@ st.markdown("---")
 st.markdown("## 🚀 Quick Start")
 st.info("""
 1. **Calculate Absorbance** - Process your spectral data
-2. **Model Calibration** - Build predictive models  
-3. **Predict Concentration** - Apply models to new data
-4. **Provide Feedback** - Share your experience
+2. **View Spectra** - Visualize and overlay multiple spectra
+3. **Model Calibration** - Build predictive models  
+4. **Predict Concentration** - Apply models to new data
+5. **Provide Feedback** - Share your experience
 
 Use the **sidebar** to navigate between pages.
 """)
