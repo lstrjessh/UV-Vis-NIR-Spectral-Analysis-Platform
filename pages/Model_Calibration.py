@@ -794,6 +794,37 @@ class CalibrationApp:
             mime="text/csv"
         )
         
+        # Hyperparameters export
+        st.markdown("#### 🧪 Optimized Hyperparameters")
+        hyper_rows = []
+        for name, result in st.session_state.model_results.items():
+            params = result.hyperparameters if hasattr(result, 'hyperparameters') and result.hyperparameters else {}
+            flat = {'Model': name}
+            for k, v in params.items():
+                flat[f'param_{k}'] = v
+            hyper_rows.append(flat)
+        if hyper_rows:
+            df_h = pd.DataFrame(hyper_rows)
+            csv_h = df_h.to_csv(index=False)
+            json_h = df_h.to_json(orient='records', indent=2)
+            c1, c2 = st.columns(2)
+            with c1:
+                st.download_button(
+                    label="📥 Download Hyperparameters (CSV)",
+                    data=csv_h,
+                    file_name=f"{output_filename}_hyperparameters.csv",
+                    mime="text/csv",
+                    key="download_hparams_csv"
+                )
+            with c2:
+                st.download_button(
+                    label="📥 Download Hyperparameters (JSON)",
+                    data=json_h,
+                    file_name=f"{output_filename}_hyperparameters.json",
+                    mime="application/json",
+                    key="download_hparams_json"
+                )
+
         st.markdown("---")
         
         # Individual model exports
@@ -904,6 +935,19 @@ class CalibrationApp:
                 df = pd.DataFrame(results_data)
                 csv_data = df.to_csv(index=False)
                 zip_file.writestr(f"{base_filename}_metrics.csv", csv_data)
+
+                # Add hyperparameters CSV and JSON
+                hyper_rows = []
+                for name, result in st.session_state.model_results.items():
+                    params = result.hyperparameters if hasattr(result, 'hyperparameters') and result.hyperparameters else {}
+                    flat = {'Model': name}
+                    for k, v in params.items():
+                        flat[f'param_{k}'] = v
+                    hyper_rows.append(flat)
+                if hyper_rows:
+                    df_h = pd.DataFrame(hyper_rows)
+                    zip_file.writestr(f"{base_filename}_hyperparameters.csv", df_h.to_csv(index=False))
+                    zip_file.writestr(f"{base_filename}_hyperparameters.json", df_h.to_json(orient='records', indent=2))
                 
                 # Add each model
                 for model_name, result in st.session_state.model_results.items():

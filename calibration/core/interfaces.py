@@ -9,7 +9,12 @@ from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 import pandas as pd
 from .data_structures import SpectralData, CalibrationDataset
-import plotly.graph_objects as go
+try:
+    import plotly.graph_objects as go
+except ImportError:  # Optional for non-web builds
+    from types import SimpleNamespace
+    from typing import Any
+    go = SimpleNamespace(Figure=Any)
 
 
 class IDataLoader(ABC):

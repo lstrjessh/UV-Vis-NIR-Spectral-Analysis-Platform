@@ -8,7 +8,29 @@ from pathlib import Path
 from typing import List, Dict, Optional, Union, Any
 import numpy as np
 import pandas as pd
-import streamlit as st
+try:
+    import streamlit as st
+    HAS_STREAMLIT = True
+except ImportError:
+    HAS_STREAMLIT = False
+    # Create dummy st object for non-streamlit contexts
+    class _DummyStreamlit:
+        def warning(self, *args, **kwargs): pass
+        def progress(self, *args, **kwargs): return _DummyProgress()
+        def expander(self, *args, **kwargs): return _DummyExpander()
+        def write(self, *args, **kwargs): pass
+        def success(self, *args, **kwargs): pass
+    class _DummyProgress:
+        def __init__(self, *args, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def progress(self, *args, **kwargs): pass
+        def empty(self): pass
+    class _DummyExpander:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def write(self, *args, **kwargs): pass
+    st = _DummyStreamlit()
 from ..core.interfaces import IDataLoader
 from ..core.data_structures import SpectralData, CalibrationDataset
 from ..core.exceptions import FileProcessingError, DataValidationError
