@@ -1,0 +1,51 @@
+# Python cache and env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# IDE/editor
+.vscode/
+.idea/
+*.code-workspace
+
+# Build outputs
+build/
+dist/
+*.spec
+
+# Executables and binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Logs and temp
+*.log
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# PyInstaller cache
+*.manifest
+*.pkg
+
+# Streamlit cache (if any)
+.streamlit/
+
+# Data/cache folders
+*.cache/
+.cache/
+
+# Node (if any subprojects)
+node_modules/
+
+# Project-specific: exclude packaged models/exports
+calibration_models/
