@@ -3,31 +3,31 @@ Models module with optimized implementations.
 """
 
 from .registry import ModelRegistry, ModelFactory
-from .pipeline_models import PipelinePLSRModel, PipelineRidgeModel, PipelineLassoModel, PipelineElasticNetModel
-from .ensemble_models import RandomForestModel, XGBoostModel
+from .linear_models import PLSRModel, RidgeModel, LassoModel, ElasticNetModel
 from .neural_models import MLPModel
 from .svm_models import SVRModel
+from .ensemble_models import RandomForestModel, XGBoostModel
 
 # Register default models
 def register_default_models():
     """Register all default models with the global registry."""
     registry = ModelRegistry()
     
-    # Pipeline models (no data leakage)
-    registry.register('plsr', PipelinePLSRModel)
-    registry.register('ridge', PipelineRidgeModel)
-    registry.register('lasso', PipelineLassoModel)
-    registry.register('elastic_net', PipelineElasticNetModel)
+    # Linear models (pipeline-based, no data leakage)
+    registry.register('plsr', PLSRModel)
+    registry.register('ridge', RidgeModel)
+    registry.register('lasso', LassoModel)
+    registry.register('elastic_net', ElasticNetModel)
     
-    # Ensemble models
-    registry.register('random_forest', RandomForestModel)
-    registry.register('xgboost', XGBoostModel)
-    
-    # Neural models
+    # Neural models (pipeline-based, no data leakage)
     registry.register('mlp', MLPModel)
     
-    # SVM models
+    # SVM models (pipeline-based, no data leakage)
     registry.register('svr', SVRModel)
+    
+    # Ensemble models (don't need scaling)
+    registry.register('random_forest', RandomForestModel)
+    registry.register('xgboost', XGBoostModel)
     
     return registry
 
@@ -40,9 +40,9 @@ __all__ = [
     'PLSRModel',
     'RidgeModel',
     'LassoModel',
-    'RandomForestModel',
-    'XGBoostModel',
     'ElasticNetModel',
     'MLPModel',
-    'SVRModel'
+    'SVRModel',
+    'RandomForestModel',
+    'XGBoostModel',
 ]

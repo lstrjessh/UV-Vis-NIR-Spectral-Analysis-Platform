@@ -1,28 +1,20 @@
 """
-Support Vector Machine model implementations.
+Support Vector Machine model implementations with pipeline support to prevent data leakage.
 """
 
 import numpy as np
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from sklearn.svm import SVR
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import cross_val_score
-import time
-import warnings
-warnings.filterwarnings('ignore')
+from sklearn.compose import TransformedTargetRegressor
 
 from ..core.base_model import BaseModel, ModelResult, ModelConfig
-from ..utils.optimization import OptunaOptimizer, RandomSearchOptimizer
+from .pipeline_models import PipelineBaseModel
 
 
-class SVRModel(BaseModel):
-    """Support Vector Regression with optimized implementation."""
+class SVRModel(PipelineBaseModel):
+    """Support Vector Regression with pipeline to prevent data leakage."""
     
-    def __init__(self, config: ModelConfig):
-        super().__init__(config)
-        self.scaler = StandardScaler()
-        self.y_scaler = StandardScaler()
-        
     def _build_model(self, **params) -> SVR:
         """Build SVR model."""
         return SVR(
@@ -37,156 +29,112 @@ class SVRModel(BaseModel):
             max_iter=-1
         )
     
-    def _optimize_hyperparameters(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
-        """Optimize SVR hyperparameters."""
+    def _create_pipeline(self, 
+                        scaler_type: str = 'standard',
+                        **model_params) -> TransformedTargetRegressor:
+        """
+        Create sklearn pipeline with proper scaling, wrapped in TransformedTargetRegressor
+        for y-scaling to prevent data leakage.
         
-        X_scaled = self.scaler.fit_transform(X)
-        y_scaled = self.y_scaler.fit_transform(y.reshape(-1, 1)).ravel()
-        
-        if self.config.optimization_method == 'random_search':
-            optimizer = RandomSearchOptimizer(
-                n_trials=self.config.n_trials,
-                random_state=self.config.random_state
-            )
+        Args:
+            scaler_type: Type of scaler ('standard', 'minmax', 'robust')
+            **model_params: Parameters for the final model
             
-            kernel_types = self.config.hyperparameters.get('kernel_types', ['rbf', 'linear'])
-            
-            search_space = {
-                'kernel': kernel_types,
-                'C': (0.01, 100),
-                'epsilon': (0.001, 1.0),
-                'gamma': ['scale', 'auto', 0.001, 0.01, 0.1]
-            }
-            
-            def objective(params):
-                # Add kernel-specific parameters
-                if params['kernel'] == 'poly':
-                    params['degree'] = np.random.randint(2, 5)
-                    params['coef0'] = np.random.uniform(0, 1)
-                
-                model = self._build_model(**params)
-                
-                try:
-                    scores = cross_val_score(
-                        model, X_scaled, y_scaled,
-                        cv=min(self.config.cv_folds, len(y) // 2),
-                        scoring='r2'
-                    )
-                    return np.mean(scores)
-                except:
-                    return -np.inf
-            
-            return optimizer.optimize(objective, search_space, direction='maximize')
+        Returns:
+            TransformedTargetRegressor wrapping the X-scaling pipeline
+        """
+        # Create base pipeline with X-scaling
+        base_pipeline = super()._create_pipeline(scaler_type, **model_params)
         
-        else:
-            # Use Optuna
-            optimizer = OptunaOptimizer(
-                n_trials=self.config.n_trials,
-                random_state=self.config.random_state
-            )
-            
-            kernel_types = self.config.hyperparameters.get('kernel_types', ['rbf', 'linear'])
-            
-            def objective(trial):
-                kernel = trial.suggest_categorical('kernel', kernel_types)
-                
-                params = {
-                    'kernel': kernel,
-                    'C': trial.suggest_float('C', 0.01, 100, log=True),
-                    'epsilon': trial.suggest_float('epsilon', 0.001, 1.0, log=True)
-                }
-                
-                # Kernel-specific parameters
-                if kernel == 'rbf':
-                    params['gamma'] = trial.suggest_categorical('gamma', ['scale', 'auto']) \
-                                    if trial.suggest_categorical('gamma_type', ['string', 'float']) == 'string' \
-                                    else trial.suggest_float('gamma_value', 1e-4, 1, log=True)
-                elif kernel == 'poly':
-                    params['degree'] = trial.suggest_int('degree', 2, 5)
-                    params['coef0'] = trial.suggest_float('coef0', 0, 1)
-                    params['gamma'] = trial.suggest_categorical('gamma', ['scale', 'auto'])
-                elif kernel == 'sigmoid':
-                    params['coef0'] = trial.suggest_float('coef0', -1, 1)
-                    params['gamma'] = trial.suggest_categorical('gamma', ['scale', 'auto'])
-                
-                model = self._build_model(**params)
-                
-                try:
-                    scores = cross_val_score(
-                        model, X_scaled, y_scaled,
-                        cv=min(self.config.cv_folds, len(y) // 2),
-                        scoring='r2'
-                    )
-                    return np.mean(scores)
-                except:
-                    return -np.inf
-            
-            return optimizer.optimize(objective, direction='maximize')
-    
-    def fit(self, X: np.ndarray, y: np.ndarray, **kwargs) -> ModelResult:
-        """Train SVR model."""
-        start_time = time.time()
-        
-        # Scale features and targets
-        X_scaled = self.scaler.fit_transform(X)
-        y_scaled = self.y_scaler.fit_transform(y.reshape(-1, 1)).ravel()
-        
-        # Optimize hyperparameters
-        if self.config.verbose:
-            print(f"Optimizing SVR hyperparameters...")
-        
-        optimal_params = self._optimize_hyperparameters(X, y)
-        
-        # Build and train final model
-        self.model = self._build_model(**optimal_params)
-        self.model.fit(X_scaled, y_scaled)
-        
-        # Make predictions
-        y_pred_scaled = self.model.predict(X_scaled)
-        y_pred = self.y_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).ravel()
-        
-        # Calculate metrics using original scale
-        metrics = self.calculate_metrics(y, y_pred, X)
-        
-        # Cross-validation
-        if self.config.cv_folds > 1:
-            cv_scores = cross_val_score(
-                self.model, X_scaled, y_scaled,
-                cv=min(self.config.cv_folds, len(y) // 2),
-                scoring='r2'
-            )
-            metrics.cv_scores = cv_scores.tolist()
-            metrics.cv_mean = float(np.mean(cv_scores))
-            metrics.cv_std = float(np.std(cv_scores))
-        
-        metrics.training_time = time.time() - start_time
-        
-        # Support vectors info
-        if hasattr(self.model, 'support_vectors_'):
-            metrics.n_support_vectors = len(self.model.support_vectors_)
-            metrics.support_vector_ratio = metrics.n_support_vectors / len(X)
-        
-        self.is_fitted = True
-        
-        if self.config.verbose:
-            print(f"SVR with {optimal_params['kernel']} kernel: "
-                  f"{metrics.n_support_vectors}/{len(X)} support vectors")
-        
-        return ModelResult(
-            model=self.model,
-            metrics=metrics,
-            config=self.config,
-            predictions=y_pred,
-            residuals=y - y_pred,
-            hyperparameters=optimal_params
+        # Wrap in TransformedTargetRegressor for y-scaling
+        return TransformedTargetRegressor(
+            regressor=base_pipeline,
+            transformer=StandardScaler(),
+            check_inverse=True
         )
     
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        """Make predictions."""
-        if not self.is_fitted:
-            raise ValueError("Model must be fitted before prediction")
+    def _get_param_grid(self):
+        """Get parameter grid for SVR."""
+        # Simple grid for grid search (if used)
+        return [
+            {'kernel': 'rbf', 'C': 1.0, 'epsilon': 0.1},
+            {'kernel': 'rbf', 'C': 10.0, 'epsilon': 0.1},
+            {'kernel': 'linear', 'C': 1.0, 'epsilon': 0.1},
+        ]
+    
+    def _suggest_hyperparameters(self, trial):
+        """Suggest hyperparameters for SVR using Optuna."""
+        kernel_types = self.config.hyperparameters.get('kernel_types', ['rbf', 'linear'])
+        kernel = trial.suggest_categorical('kernel', kernel_types)
         
-        X_scaled = self.scaler.transform(X)
-        y_pred_scaled = self.model.predict(X_scaled)
-        # Inverse transform predictions back to original scale
-        return self.y_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).ravel()
+        params = {
+            'kernel': kernel,
+            'C': trial.suggest_float('C', 0.01, 100, log=True),
+            'epsilon': trial.suggest_float('epsilon', 0.001, 1.0, log=True)
+        }
+        
+        # Kernel-specific parameters
+        if kernel == 'rbf':
+            params['gamma'] = trial.suggest_categorical('gamma', ['scale', 'auto']) \
+                            if trial.suggest_categorical('gamma_type', ['string', 'float']) == 'string' \
+                            else trial.suggest_float('gamma_value', 1e-4, 1, log=True)
+        elif kernel == 'poly':
+            params['degree'] = trial.suggest_int('degree', 2, 5)
+            params['coef0'] = trial.suggest_float('coef0', 0, 1)
+            params['gamma'] = trial.suggest_categorical('gamma', ['scale', 'auto'])
+        elif kernel == 'sigmoid':
+            params['coef0'] = trial.suggest_float('coef0', -1, 1)
+            params['gamma'] = trial.suggest_categorical('gamma', ['scale', 'auto'])
+        
+        return params
+    
+    def _get_default_params(self):
+        """Get default parameters for SVR."""
+        return {
+            'kernel': 'rbf',
+            'C': 1.0,
+            'epsilon': 0.1,
+            'gamma': 'scale'
+        }
+    
+    def _validate_components(self, X: np.ndarray, n_components: int) -> int:
+        """Validate components (SVR doesn't use components, but method exists for compatibility)."""
+        return n_components
+    
+    def _extract_feature_importance(self, X: np.ndarray) -> Dict[str, float]:
+        """Extract SVR feature importance (not directly available, return empty dict)."""
+        # SVR doesn't provide direct feature importance
+        # Could potentially use support vectors or coefficients for linear kernel
+        if hasattr(self.pipeline, 'regressor_'):
+            inner_pipeline = self.pipeline.regressor_
+            if hasattr(inner_pipeline, 'named_steps') and 'model' in inner_pipeline.named_steps:
+                model = inner_pipeline.named_steps['model']
+                # For linear kernel, can use coefficients
+                if hasattr(model, 'coef_') and model.kernel == 'linear':
+                    coef = model.coef_[0]
+                    return {
+                        f'feature_{i}': float(np.abs(coef[i]))
+                        for i in range(len(coef))
+                    }
+        return {}
+    
+    def fit(self, X: np.ndarray, y: np.ndarray, **kwargs) -> ModelResult:
+        """Train SVR pipeline model with support vector tracking."""
+        # Call parent fit
+        result = super().fit(X, y, **kwargs)
+        
+        # Add support vectors info if available
+        if hasattr(self.pipeline, 'regressor_'):
+            inner_pipeline = self.pipeline.regressor_
+            if hasattr(inner_pipeline, 'named_steps') and 'model' in inner_pipeline.named_steps:
+                model = inner_pipeline.named_steps['model']
+                if hasattr(model, 'support_vectors_'):
+                    result.metrics.n_support_vectors = len(model.support_vectors_)
+                    result.metrics.support_vector_ratio = result.metrics.n_support_vectors / len(X)
+                    
+                    if self.config.verbose:
+                        kernel_type = getattr(model, 'kernel', 'unknown')
+                        print(f"SVR with {kernel_type} kernel: "
+                              f"{result.metrics.n_support_vectors}/{len(X)} support vectors")
+        
+        return result
