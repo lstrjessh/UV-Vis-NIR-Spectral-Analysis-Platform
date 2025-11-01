@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import QApplication, QMainWindow, QTabWidget
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPalette, QColor
+from PyQt6.QtGui import QPalette, QColor, QIcon
+from pathlib import Path
 import sys
 
 from qt_app.views.home import HomeView
@@ -15,6 +16,20 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Spectral Analysis Platform")
         self.resize(1400, 900)
+        
+        # Set window icon if available
+        icon_path = Path(__file__).parent.parent / 'assets' / 'app.ico'
+        if not icon_path.exists():
+            # Try alternative paths
+            icon_path = Path(__file__).parent.parent / 'app.ico'
+        if not icon_path.exists():
+            # Try PNG as fallback
+            icon_path = Path(__file__).parent.parent / 'assets' / 'app.png'
+        if not icon_path.exists():
+            icon_path = Path(__file__).parent.parent / 'app.png'
+        
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
         
         # Apply modern styling
         self.setStyleSheet("""
