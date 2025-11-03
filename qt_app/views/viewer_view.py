@@ -26,8 +26,8 @@ class ViewerView(QWidget):
         
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(32, 24, 32, 24)
-        layout.setSpacing(20)
+        layout.setContentsMargins(100, 20, 100, 20)
+        layout.setSpacing(18)
 
         # Title
         title = QLabel("Spectrum Viewer")
@@ -38,7 +38,7 @@ class ViewerView(QWidget):
         layout.addWidget(title)
 
         subtitle = QLabel("Load and visualize multiple spectra with customizable processing options")
-        subtitle.setStyleSheet("color: palette(mid); font-size: 14px; margin-bottom: 8px;")
+        subtitle.setStyleSheet("color: #444444; font-size: 14px; margin-bottom: 8px;")
         layout.addWidget(subtitle)
 
         # File selection
@@ -47,11 +47,18 @@ class ViewerView(QWidget):
         
         btn = QPushButton("📂 Select Spectrum Files...")
         btn.setMinimumHeight(44)
+        btn.setToolTip(
+            "Load multiple spectral files for comparison.\n\n"
+            "📋 Supported: CSV, TXT, DAT files\n"
+            "📊 Overlay and compare spectra\n"
+            "🎨 Automatic color coding\n"
+            "💡 Great for replicate comparison"
+        )
         btn.clicked.connect(self._pick_files)
         file_layout.addWidget(btn)
         
         self.file_count = QLabel("No files loaded")
-        self.file_count.setStyleSheet("color: palette(mid); font-size: 13px;")
+        self.file_count.setStyleSheet("color: #555555; font-size: 13px;")
         file_layout.addWidget(self.file_count)
         file_layout.addStretch()
         
@@ -65,51 +72,98 @@ class ViewerView(QWidget):
         
         # Normalization
         self.cb_normalize = QCheckBox("Normalize Intensity")
-        self.cb_normalize.setToolTip("Scale each spectrum to 0-1 range")
+        self.cb_normalize.setToolTip(
+            "Scale each spectrum to 0-1 range.\n\n"
+            "📊 Enables intensity comparison\n"
+            "📉 Removes absolute scale differences\n"
+            "💡 Useful for comparing spectra with different magnitudes"
+        )
         self.cb_normalize.stateChanged.connect(self._render_plot)
         options_layout.addWidget(self.cb_normalize, 0, 0)
         
         # Smoothing
         self.cb_smooth = QCheckBox("Apply Smoothing")
-        self.cb_smooth.setToolTip("Apply Gaussian smoothing filter")
+        self.cb_smooth.setToolTip(
+            "Apply Gaussian smoothing filter.\n\n"
+            "📊 Reduces high-frequency noise\n"
+            "🔬 Preserves general spectral shape\n"
+            "💡 Adjust sigma for smoothing strength"
+        )
         self.cb_smooth.stateChanged.connect(self._render_plot)
         options_layout.addWidget(self.cb_smooth, 0, 1)
         
-        options_layout.addWidget(QLabel("Smoothing σ:"), 1, 0)
+        sigma_label = QLabel("Smoothing σ:")
+        sigma_label.setToolTip(
+            "Gaussian filter standard deviation.\n\n"
+            "⬆️ Higher = more smoothing\n"
+            "⬇️ Lower = less smoothing\n"
+            "💡 Typical: 1.0-2.0 for spectral data"
+        )
+        options_layout.addWidget(sigma_label, 1, 0)
         self.spin_sigma = QDoubleSpinBox()
         self.spin_sigma.setRange(0.1, 10.0)
         self.spin_sigma.setSingleStep(0.1)
         self.spin_sigma.setValue(1.0)
+        self.spin_sigma.setToolTip("Standard deviation for Gaussian smoothing (sigma)")
         self.spin_sigma.valueChanged.connect(self._render_plot)
         options_layout.addWidget(self.spin_sigma, 1, 1)
         
         # Peak detection
         self.cb_peaks = QCheckBox("Show Peaks")
-        self.cb_peaks.setToolTip("Detect and mark spectral peaks")
+        self.cb_peaks.setToolTip(
+            "Detect and mark spectral peaks.\n\n"
+            "🎯 Identifies maxima in spectra\n"
+            "💎 Marks peaks with diamond markers\n"
+            "📋 Lists peaks in table below"
+        )
         self.cb_peaks.stateChanged.connect(self._render_plot)
         options_layout.addWidget(self.cb_peaks, 2, 0, 1, 2)
         
-        options_layout.addWidget(QLabel("Min Height:"), 3, 0)
+        height_label = QLabel("Min Height:")
+        height_label.setToolTip(
+            "Minimum peak height threshold.\n\n"
+            "📏 Lower for normalized spectra\n"
+            "⬆️ Higher = fewer, stronger peaks\n"
+            "💡 Adjust based on data scale"
+        )
+        options_layout.addWidget(height_label, 3, 0)
         self.spin_height = QDoubleSpinBox()
         self.spin_height.setRange(0.0, 10.0)
         self.spin_height.setSingleStep(0.01)
         self.spin_height.setValue(0.01)
+        self.spin_height.setToolTip("Minimum intensity for peak detection")
         self.spin_height.valueChanged.connect(self._render_plot)
         options_layout.addWidget(self.spin_height, 3, 1)
         
-        options_layout.addWidget(QLabel("Min Distance (nm):"), 4, 0)
+        distance_label = QLabel("Min Distance (nm):")
+        distance_label.setToolTip(
+            "Minimum separation between peaks.\n\n"
+            "📏 Prevents detecting nearby peaks\n"
+            "⬇️ Lower = detects close peaks\n"
+            "💡 Typical: 5-20 nm"
+        )
+        options_layout.addWidget(distance_label, 4, 0)
         self.spin_distance = QDoubleSpinBox()
         self.spin_distance.setRange(1.0, 100.0)
         self.spin_distance.setSingleStep(0.5)
         self.spin_distance.setValue(5.0)
+        self.spin_distance.setToolTip("Minimum distance between peaks in nanometers")
         self.spin_distance.valueChanged.connect(self._render_plot)
         options_layout.addWidget(self.spin_distance, 4, 1)
         
-        options_layout.addWidget(QLabel("Min Prominence:"), 5, 0)
+        prom_label = QLabel("Min Prominence:")
+        prom_label.setToolTip(
+            "Peak prominence threshold.\n\n"
+            "📏 How much peak stands out\n"
+            "⬆️ Higher = only prominent peaks\n"
+            "💡 Typical: 0.01-0.1"
+        )
+        options_layout.addWidget(prom_label, 5, 0)
         self.spin_prom = QDoubleSpinBox()
         self.spin_prom.setRange(0.0, 10.0)
         self.spin_prom.setSingleStep(0.01)
         self.spin_prom.setValue(0.01)
+        self.spin_prom.setToolTip("Minimum peak prominence")
         self.spin_prom.valueChanged.connect(self._render_plot)
         options_layout.addWidget(self.spin_prom, 5, 1)
         

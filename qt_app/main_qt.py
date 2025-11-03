@@ -14,8 +14,8 @@ from qt_app.views.predict_view import PredictView
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Spectral Analysis Platform")
-        self.resize(1400, 900)
+        self.setWindowTitle("🔬 Spectral Analysis Platform - Advanced ML Calibration Tool")
+        self.resize(1450, 950)
         
         # Set window icon if available
         icon_path = Path(__file__).parent.parent / 'assets' / 'app.ico'
@@ -96,13 +96,32 @@ class MainWindow(QMainWindow):
         self.tabs.setTabPosition(QTabWidget.TabPosition.North)
         self.tabs.setMovable(True)
         self.tabs.setDocumentMode(True)
+        self.tabs.setToolTip(
+            "Navigate between different analysis tools.\n\n"
+            "💡 Hover over any control to see detailed help\n"
+            "📚 Start with Home for an overview"
+        )
 
-        # Add tabs
-        self.tabs.addTab(HomeView(self), "🏠 Home")
-        self.tabs.addTab(AbsorbanceView(self), "📊 Absorbance")
-        self.tabs.addTab(ViewerView(self), "👁 Viewer")
-        self.tabs.addTab(CalibrationView(self), "🔬 Calibration")
-        self.tabs.addTab(PredictView(self), "🎯 Predict")
+        # Add tabs with tooltips
+        home_widget = HomeView(self)
+        home_widget.setToolTip("Overview of available features and quick start guide")
+        self.tabs.addTab(home_widget, "🏠 Home")
+        
+        abs_widget = AbsorbanceView(self)
+        abs_widget.setToolTip("Calculate absorbance from reference and sample spectra with peak detection")
+        self.tabs.addTab(abs_widget, "📊 Absorbance")
+        
+        viewer_widget = ViewerView(self)
+        viewer_widget.setToolTip("View and compare multiple spectra with processing options")
+        self.tabs.addTab(viewer_widget, "👁 Viewer")
+        
+        calib_widget = CalibrationView(self)
+        calib_widget.setToolTip("Train machine learning models for concentration prediction")
+        self.tabs.addTab(calib_widget, "🔬 Calibration")
+        
+        predict_widget = PredictView(self)
+        predict_widget.setToolTip("Apply trained models to predict concentrations in new spectra")
+        self.tabs.addTab(predict_widget, "🎯 Predict")
 
         self.setCentralWidget(self.tabs)
 

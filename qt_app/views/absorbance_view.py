@@ -32,8 +32,8 @@ class AbsorbanceView(QWidget):
         
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(32, 24, 32, 24)
-        layout.setSpacing(20)
+        layout.setContentsMargins(100, 20, 100, 20)
+        layout.setSpacing(18)
 
         # Title
         title = QLabel("Calculate Absorbance")
@@ -45,7 +45,7 @@ class AbsorbanceView(QWidget):
         layout.addWidget(title)
 
         subtitle = QLabel("Upload reference, sample, and optional dark spectra to calculate absorbance")
-        subtitle.setStyleSheet("color: palette(mid); font-size: 14px; margin-bottom: 8px;")
+        subtitle.setStyleSheet("color: #444444; font-size: 14px; margin-bottom: 8px;")
         layout.addWidget(subtitle)
 
         # 1. File Selection
@@ -56,11 +56,17 @@ class AbsorbanceView(QWidget):
         # Reference
         ref_label = QLabel("Reference (Blank):")
         ref_label.setStyleSheet("font-weight: 600;")
+        ref_label.setToolTip("Blank/reference spectrum without the sample. This represents the baseline signal from the solvent or cuvette.")
         self.btn_ref = QPushButton("Choose Files...")
-        self.btn_ref.setToolTip("Select reference/blank spectral files")
+        self.btn_ref.setToolTip(
+            "Select reference/blank spectral files.\n\n"
+            "📋 Supported formats: CSV, TXT, DAT\n"
+            "📊 Required structure: wavelength (nm) and intensity columns\n"
+            "🔢 Multiple files: Will be averaged automatically"
+        )
         self.btn_ref.clicked.connect(self._select_ref)
         self.ref_count = QLabel("0 files")
-        self.ref_count.setStyleSheet("color: palette(mid);")
+        self.ref_count.setStyleSheet("color: #555555;")
         
         file_layout.addWidget(ref_label, 0, 0)
         file_layout.addWidget(self.btn_ref, 0, 1)
@@ -69,11 +75,17 @@ class AbsorbanceView(QWidget):
         # Sample
         sample_label = QLabel("Sample:")
         sample_label.setStyleSheet("font-weight: 600;")
+        sample_label.setToolTip("Sample spectrum containing the analyte of interest. Measured under same conditions as reference.")
         self.btn_sample = QPushButton("Choose Files...")
-        self.btn_sample.setToolTip("Select sample spectral files")
+        self.btn_sample.setToolTip(
+            "Select sample spectral files.\n\n"
+            "📋 Supported formats: CSV, TXT, DAT\n"
+            "📊 Must have same wavelength grid as reference\n"
+            "🔢 Multiple files: Will be averaged automatically"
+        )
         self.btn_sample.clicked.connect(self._select_sample)
         self.sample_count = QLabel("0 files")
-        self.sample_count.setStyleSheet("color: palette(mid);")
+        self.sample_count.setStyleSheet("color: #555555;")
         
         file_layout.addWidget(sample_label, 1, 0)
         file_layout.addWidget(self.btn_sample, 1, 1)
@@ -82,11 +94,17 @@ class AbsorbanceView(QWidget):
         # Dark (optional)
         dark_label = QLabel("Dark (Optional):")
         dark_label.setStyleSheet("font-weight: 600;")
+        dark_label.setToolTip("Dark spectrum captures detector noise without light. Used for dark correction to remove systematic noise.")
         self.btn_dark = QPushButton("Choose Files...")
-        self.btn_dark.setToolTip("Select dark/noise spectral files (optional)")
+        self.btn_dark.setToolTip(
+            "Select dark/noise spectral files (optional).\n\n"
+            "⚫ Dark correction formula: A = log₁₀((I₀-Dark)/(I-Dark))\n"
+            "📊 Improves signal quality by removing detector noise\n"
+            "🔢 Multiple files: Will be averaged automatically"
+        )
         self.btn_dark.clicked.connect(self._select_dark)
         self.dark_count = QLabel("0 files")
-        self.dark_count.setStyleSheet("color: palette(mid);")
+        self.dark_count.setStyleSheet("color: #555555;")
         
         file_layout.addWidget(dark_label, 2, 0)
         file_layout.addWidget(self.btn_dark, 2, 1)
@@ -119,46 +137,102 @@ class AbsorbanceView(QWidget):
         
         # Smoothing
         self.cb_smooth = QCheckBox("Apply Smoothing")
-        self.cb_smooth.setToolTip("Apply Savitzky-Golay smoothing filter")
+        self.cb_smooth.setToolTip(
+            "Apply Savitzky-Golay smoothing filter.\n\n"
+            "📊 Reduces noise while preserving spectral features\n"
+            "🔬 Uses polynomial fitting within a moving window\n"
+            "⚠️ Too much smoothing can remove important features"
+        )
         controls_layout.addWidget(self.cb_smooth, 0, 0, 1, 2)
         
-        controls_layout.addWidget(QLabel("Window Size:"), 1, 0)
+        window_label = QLabel("Window Size:")
+        window_label.setToolTip(
+            "Window size for Savitzky-Golay smoothing.\n\n"
+            "📏 Must be odd and > polynomial order\n"
+            "⬆️ Larger windows = more smoothing\n"
+            "📉 Typical range: 5-15 for spectral data\n"
+            "💡 Recommended: 11"
+        )
+        controls_layout.addWidget(window_label, 1, 0)
         self.spin_window = QSpinBox()
         self.spin_window.setRange(3, 101)
         self.spin_window.setSingleStep(2)
         self.spin_window.setValue(11)
+        self.spin_window.setToolTip("Window size for smoothing filter (must be odd)")
         controls_layout.addWidget(self.spin_window, 1, 1)
         
-        controls_layout.addWidget(QLabel("Polynomial Order:"), 2, 0)
+        poly_label = QLabel("Polynomial Order:")
+        poly_label.setToolTip(
+            "Polynomial order for Savitzky-Golay smoothing.\n\n"
+            "📐 Higher order = preserves more features\n"
+            "⚠️ Must be less than window size\n"
+            "📉 Order 2-3 works well for most spectra\n"
+            "💡 Recommended: 2"
+        )
+        controls_layout.addWidget(poly_label, 2, 0)
         self.spin_poly = QSpinBox()
         self.spin_poly.setRange(1, 9)
         self.spin_poly.setValue(2)
+        self.spin_poly.setToolTip("Polynomial order (typically 2-3 for spectral data)")
         controls_layout.addWidget(self.spin_poly, 2, 1)
         
         # Peak detection
         peak_label = QLabel("Peak Detection:")
         peak_label.setStyleSheet("font-weight: 600; margin-top: 8px;")
+        peak_label.setToolTip(
+            "Automatic peak detection parameters.\n\n"
+            "🎯 Identifies absorption maxima in the spectrum\n"
+            "📊 Uses scipy.signal.find_peaks algorithm\n"
+            "⚙️ Adjust parameters to control sensitivity"
+        )
         controls_layout.addWidget(peak_label, 3, 0, 1, 2)
         
-        controls_layout.addWidget(QLabel("Min Height:"), 4, 0)
+        height_label = QLabel("Min Height:")
+        height_label.setToolTip(
+            "Minimum absorbance height for peak detection.\n\n"
+            "📏 Peaks below this threshold are ignored\n"
+            "⬆️ Higher = fewer, stronger peaks only\n"
+            "⬇️ Lower = detects weaker peaks\n"
+            "💡 Typical: 0.05-0.2 for absorbance data"
+        )
+        controls_layout.addWidget(height_label, 4, 0)
         self.spin_peak_height = QDoubleSpinBox()
         self.spin_peak_height.setRange(0.0, 10.0)
         self.spin_peak_height.setSingleStep(0.01)
         self.spin_peak_height.setValue(0.1)
+        self.spin_peak_height.setToolTip("Minimum peak height (absorbance units)")
         controls_layout.addWidget(self.spin_peak_height, 4, 1)
         
-        controls_layout.addWidget(QLabel("Min Distance (nm):"), 5, 0)
+        distance_label = QLabel("Min Distance (nm):")
+        distance_label.setToolTip(
+            "Minimum wavelength separation between peaks.\n\n"
+            "📏 Prevents detecting multiple peaks too close together\n"
+            "⬆️ Higher = fewer peaks, more separated\n"
+            "⬇️ Lower = can detect closely spaced peaks\n"
+            "💡 Typical: 10-20 nm for UV-Vis spectra"
+        )
+        controls_layout.addWidget(distance_label, 5, 0)
         self.spin_peak_distance = QDoubleSpinBox()
         self.spin_peak_distance.setRange(0.1, 1000.0)
         self.spin_peak_distance.setSingleStep(0.5)
         self.spin_peak_distance.setValue(15.0)
+        self.spin_peak_distance.setToolTip("Minimum distance between peaks in nanometers")
         controls_layout.addWidget(self.spin_peak_distance, 5, 1)
         
-        controls_layout.addWidget(QLabel("Min Prominence:"), 6, 0)
+        prom_label = QLabel("Min Prominence:")
+        prom_label.setToolTip(
+            "Minimum peak prominence (relative height).\n\n"
+            "📏 How much a peak stands out from surroundings\n"
+            "⬆️ Higher = only prominent, sharp peaks\n"
+            "⬇️ Lower = detects subtle shoulders and bumps\n"
+            "💡 Typical: 0.01-0.1 for absorbance data"
+        )
+        controls_layout.addWidget(prom_label, 6, 0)
         self.spin_peak_prom = QDoubleSpinBox()
         self.spin_peak_prom.setRange(0.0, 10.0)
         self.spin_peak_prom.setSingleStep(0.01)
         self.spin_peak_prom.setValue(0.05)
+        self.spin_peak_prom.setToolTip("Minimum peak prominence (absorbance units)")
         controls_layout.addWidget(self.spin_peak_prom, 6, 1)
         
         controls_layout.setColumnStretch(1, 1)
@@ -181,13 +255,24 @@ class AbsorbanceView(QWidget):
         button_layout.setSpacing(12)
         
         self.run_btn = QPushButton("🔬 Compute Absorbance")
-        self.run_btn.setToolTip("Calculate absorbance spectrum")
+        self.run_btn.setToolTip(
+            "Calculate absorbance spectrum from loaded files.\n\n"
+            "📐 Formula: A = log₁₀(I₀/I)\n"
+            "  where I₀ = reference, I = sample\n\n"
+            "⚫ With dark: A = log₁₀((I₀-Dark)/(I-Dark))\n\n"
+            "🔬 Automatically applies smoothing and peak detection"
+        )
         self.run_btn.setMinimumHeight(44)
         self.run_btn.clicked.connect(self._compute)
         button_layout.addWidget(self.run_btn)
         
         self.export_btn = QPushButton("💾 Export CSV")
-        self.export_btn.setToolTip("Export absorbance data")
+        self.export_btn.setToolTip(
+            "Export calculated absorbance data to CSV file.\n\n"
+            "📋 Format: wavelength (nm), absorbance (AU)\n"
+            "💾 Can be imported into other analysis tools\n"
+            "📊 Compatible with Excel, Origin, etc."
+        )
         self.export_btn.setEnabled(False)
         self.export_btn.clicked.connect(self._export_csv)
         button_layout.addWidget(self.export_btn)
@@ -300,13 +385,28 @@ class AbsorbanceView(QWidget):
             canvas.draw_idle()
             return
         
+        # Color palette for different samples
+        colors = ['#2196F3', '#FF9800', '#4CAF50', '#F44336', '#9C27B0', 
+                 '#00BCD4', '#FFEB3B', '#795548', '#E91E63', '#607D8B']
+        
         if len(dfs) == 1:
             ax.plot(dfs[0]['Nanometers'], dfs[0]['Counts'], 
-                   color='#2196F3', linewidth=2, alpha=0.9)
+                   color=colors[0], linewidth=2, alpha=0.9)
         else:
+            # Plot each file in a different color
+            for idx, df in enumerate(dfs):
+                color = colors[idx % len(colors)]
+                ax.plot(df['Nanometers'], df['Counts'], 
+                       color=color, linewidth=2, alpha=0.7, 
+                       label=f'File {idx+1}' if len(dfs) <= 5 else None)
+            
+            # Also show average if multiple files
             avg = np.mean(np.column_stack([d['Counts'].values for d in dfs]), axis=1)
-            ax.plot(ref, avg, color='#2196F3', linewidth=2, alpha=0.9)
-            ax.fill_between(ref, avg * 0.95, avg * 1.05, alpha=0.2, color='#2196F3')
+            ax.plot(ref, avg, color='#000000', linewidth=2.5, alpha=0.9, 
+                   linestyle='--', label='Average' if len(dfs) <= 5 else None)
+            
+            if len(dfs) <= 5:
+                ax.legend(loc='best', fontsize=8)
         
         ax.set_title(f"{label} Preview ({len(files)} file{'s' if len(files) > 1 else ''})", 
                     fontsize=12, fontweight='bold', color=text_color, pad=10)
