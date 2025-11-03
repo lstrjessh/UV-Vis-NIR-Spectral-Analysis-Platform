@@ -45,11 +45,15 @@ class HomeView(QWidget):
         cards.setContentsMargins(0, 10, 0, 10)
         
         features = [
-            ("📊", "Calculate Absorbance", 
+            ("📷", "Live Capture", 
+             "Real-time spectral data capture from camera-based spectrometer. "
+             "Perform wavelength calibration, peak detection, and save spectra for analysis.",
+             "• Real-time camera preview\n• Wavelength calibration\n• Peak detection & labeling\n• Export to CSV"),
+            ("🧮", "Calculate Absorbance", 
              "Process reference, sample, and dark spectra to calculate absorbance with automatic peak detection. "
              "Apply smoothing filters and customize peak detection parameters.",
              "• Reference/blank spectrum\n• Sample spectrum\n• Optional dark correction\n• Peak detection & analysis"),
-            ("👁", "View Spectra", 
+            ("👁️", "View Spectra", 
              "Visualize and compare multiple spectral datasets with customizable processing options. "
              "Apply normalization, smoothing, and peak detection to multiple spectra simultaneously.",
              "• Multi-spectrum overlay\n• Normalization options\n• Gaussian smoothing\n• Interactive peak detection"),
@@ -65,8 +69,8 @@ class HomeView(QWidget):
         ]
         
         for idx, (icon, title_text, desc, features_text) in enumerate(features):
-            row = idx // 2
-            col = idx % 2
+            row = idx // 3  # 3 columns instead of 2
+            col = idx % 3
             
             card = QFrame()
             card.setStyleSheet("""
@@ -74,8 +78,8 @@ class HomeView(QWidget):
                     background: #ffffff;
                     border: 2px solid #d0d0d0;
                     border-radius: 8px;
-                    padding: 18px;
-                    max-height: 220px;
+                    padding: 15px;
+                    max-height: 200px;
                 }
                 QFrame:hover {
                     border: 2px solid #2196F3;
@@ -86,34 +90,34 @@ class HomeView(QWidget):
             card.setToolTip(features_text)
             
             card_layout = QVBoxLayout(card)
-            card_layout.setSpacing(6)
-            card_layout.setContentsMargins(8, 8, 8, 8)
+            card_layout.setSpacing(5)
+            card_layout.setContentsMargins(6, 6, 6, 6)
             
             # Icon
             icon_label = QLabel(icon)
             icon_font = QFont()
-            icon_font.setPointSize(28)
+            icon_font.setPointSize(36)
             icon_label.setFont(icon_font)
             icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            icon_label.setMaximumHeight(35)
+            icon_label.setMaximumHeight(44)
             card_layout.addWidget(icon_label)
             
             # Title
             title_label = QLabel(title_text)
             title_font = QFont()
-            title_font.setPointSize(14)
+            title_font.setPointSize(16)
             title_font.setBold(True)
             title_label.setFont(title_font)
             title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             title_label.setStyleSheet("color: #1a1a1a;")
-            title_label.setMaximumHeight(25)
+            title_label.setMaximumHeight(30)
             card_layout.addWidget(title_label)
             
             # Description
             desc_label = QLabel(desc)
             desc_label.setWordWrap(True)
             desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            desc_label.setStyleSheet("color: #3a3a3a; font-size: 11px; padding: 2px;")
+            desc_label.setStyleSheet("color: #3a3a3a; font-size: 13px; padding: 4px;")
             desc_label.setMaximumHeight(120)
             card_layout.addWidget(desc_label)
             
@@ -125,7 +129,8 @@ class HomeView(QWidget):
         instructions = QLabel(
             "🚀 <b>Quick Start:</b> Use the tabs above to navigate between features.<br>"
             "💡 <b>Tip:</b> Hover over controls to see detailed tooltips explaining each parameter.<br>"
-            "📂 <b>Getting Started:</b> Load your spectral data in the '<b>Absorbance</b>' tab to begin analysis."
+            "� <b>Hardware:</b> Use '<b>Capture</b>' tab for real-time spectrometer data acquisition.<br>"
+            "📂 <b>Analysis:</b> Load spectral data in the '<b>Absorbance</b>' or '<b>Viewer</b>' tab to begin."
         )
         instructions.setWordWrap(True)
         instructions.setAlignment(Qt.AlignmentFlag.AlignCenter)

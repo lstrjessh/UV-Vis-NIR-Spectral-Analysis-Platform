@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 
 from qt_app.views.home import HomeView
+from qt_app.views.capture_view import CaptureView
 from qt_app.views.absorbance_view import AbsorbanceView
 from qt_app.views.viewer_view import ViewerView
 from qt_app.views.calibration_view import CalibrationView
@@ -106,6 +107,10 @@ class MainWindow(QMainWindow):
         home_widget = HomeView(self)
         home_widget.setToolTip("Overview of available features and quick start guide")
         self.tabs.addTab(home_widget, "🏠 Home")
+        
+        capture_widget = CaptureView(self)
+        capture_widget.setToolTip("Real-time spectral data capture from camera-based spectrometer")
+        self.tabs.addTab(capture_widget, "📷 Capture")
         
         abs_widget = AbsorbanceView(self)
         abs_widget.setToolTip("Calculate absorbance from reference and sample spectra with peak detection")
