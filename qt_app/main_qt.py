@@ -16,7 +16,7 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("🔬 Spectral Analysis Platform - Advanced ML Calibration Tool")
-        self.resize(1450, 950)
+        self.resize(1650, 1000)
         
         # Set window icon if available
         icon_path = Path(__file__).parent.parent / 'assets' / 'app.ico'
@@ -156,6 +156,12 @@ def main() -> None:
     
     # Setup adaptive theme
     setup_theme(app)
+    
+    # Load modern stylesheet
+    style_path = Path(__file__).parent / 'resources' / 'modern_style.qss'
+    if style_path.exists():
+        with open(style_path, 'r') as f:
+            app.setStyleSheet(f.read())
     
     window = MainWindow()
     window.show()

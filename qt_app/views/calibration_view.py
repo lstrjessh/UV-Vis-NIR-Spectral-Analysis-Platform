@@ -27,384 +27,237 @@ class CalibrationView(QWidget):
         
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(100, 20, 100, 20)
-        layout.setSpacing(18)
+        layout.setContentsMargins(60, 20, 60, 20)
+        layout.setSpacing(20)
 
         # Title
-        title = QLabel("Model Calibration")
-        title_font = QFont()
-        title_font.setPointSize(24)
-        title_font.setBold(True)
-        title.setFont(title_font)
+        title = QLabel("🔬 Model Calibration")
+        title.setProperty("class", "title")
         layout.addWidget(title)
 
         subtitle = QLabel("Train machine learning models for spectral concentration prediction")
-        subtitle.setStyleSheet("color: #444444; font-size: 14px; margin-bottom: 8px;")
+        subtitle.setProperty("class", "subtitle")
         layout.addWidget(subtitle)
 
-        # 1. Data Loader
-        loader_group = QGroupBox("Step 1: Load Calibration Dataset")
-        loader_layout = QHBoxLayout()
+        # Two-column layout
+        main_content = QHBoxLayout()
+        main_content.setSpacing(20)
         
-        self.load_btn = QPushButton("📂 Select Dataset Files...")
-        self.load_btn.setMinimumHeight(44)
-        self.load_btn.setToolTip(
-            "Load spectral calibration dataset files.\n\n"
-            "📋 Supported: CSV, TXT, DAT files\n"
-            "📊 Required: wavelength and absorbance columns\n"
-            "🏷️ Concentration: Extracted from filename or entered manually\n"
-            "💡 Example filename: 0.5_replicate1.csv (0.5 = concentration)"
-        )
+        # LEFT COLUMN - Controls
+        left_column = QVBoxLayout()
+        left_column.setSpacing(15)
+
+        # 1. Data Loader
+        loader_group = QGroupBox("📁 Load Dataset")
+        loader_layout = QVBoxLayout()
+        loader_layout.setSpacing(10)
+        
+        self.load_btn = QPushButton("📂 Select Files...")
+        self.load_btn.setMinimumHeight(40)
+        self.load_btn.setToolTip("Load CSV spectral files with concentration in filename")
         self.load_btn.clicked.connect(self._load_files)
         loader_layout.addWidget(self.load_btn)
         
         self.load_status = QLabel("No dataset loaded")
-        self.load_status.setStyleSheet("color: #555555; font-size: 13px;")
+        self.load_status.setStyleSheet("color: #888; font-size: 12px;")
         loader_layout.addWidget(self.load_status)
-        loader_layout.addStretch()
         
         loader_group.setLayout(loader_layout)
-        layout.addWidget(loader_group)
+        left_column.addWidget(loader_group)
 
-        # 2. Preprocessing
-        prep_group = QGroupBox("Step 2: Preprocessing Configuration")
+        # 2. Preprocessing (Compact)
+        prep_group = QGroupBox("⚙️ Preprocessing")
         prep_layout = QGridLayout()
-        prep_layout.setSpacing(12)
+        prep_layout.setSpacing(8)
+        prep_layout.setColumnStretch(1, 1)
         
-        # Smoothing
-        self.cb_smooth = QCheckBox("Apply Smoothing")
-        self.cb_smooth.setToolTip(
-            "Savitzky-Golay smoothing reduces noise while preserving spectral features.\n\n"
-            "📊 Uses polynomial fitting within a moving window\n"
-            "🔬 Helps improve signal-to-noise ratio\n"
-            "⚠️ Can remove important features if over-applied"
-        )
+        self.cb_smooth = QCheckBox("Smoothing")
+        self.cb_smooth.setToolTip("Savitzky-Golay smoothing")
         self.cb_smooth.stateChanged.connect(self._render_previews)
-        prep_layout.addWidget(self.cb_smooth, 0, 0, 1, 2)
+        prep_layout.addWidget(self.cb_smooth, 0, 0)
         
-        window_label = QLabel("Window Size:")
-        window_label.setToolTip(
-            "Must be odd and greater than polynomial order.\n\n"
-            "⬆️ Larger windows = more smoothing\n"
-            "💡 Recommended: 11"
-        )
-        prep_layout.addWidget(window_label, 1, 0)
+        window_label = QLabel("Window:")
+        prep_layout.addWidget(window_label, 0, 1)
         self.spin_window = QSpinBox()
         self.spin_window.setRange(3, 51)
         self.spin_window.setSingleStep(2)
         self.spin_window.setValue(11)
-        self.spin_window.setToolTip("Window size for Savitzky-Golay smoothing (must be odd)")
         self.spin_window.valueChanged.connect(self._render_previews)
-        prep_layout.addWidget(self.spin_window, 1, 1)
+        prep_layout.addWidget(self.spin_window, 0, 2)
         
-        poly_label = QLabel("Polynomial Order:")
-        poly_label.setToolTip(
-            "Higher orders preserve more spectral features.\n\n"
-            "⚠️ Must be less than window size\n"
-            "💡 Recommended: 2-3"
-        )
-        prep_layout.addWidget(poly_label, 2, 0)
+        poly_label = QLabel("Poly:")
+        prep_layout.addWidget(poly_label, 1, 1)
         self.spin_poly = QSpinBox()
         self.spin_poly.setRange(1, 9)
         self.spin_poly.setValue(2)
-        self.spin_poly.setToolTip("Polynomial order for smoothing (typically 2-3)")
         self.spin_poly.valueChanged.connect(self._render_previews)
-        prep_layout.addWidget(self.spin_poly, 2, 1)
+        prep_layout.addWidget(self.spin_poly, 1, 2)
         
         deriv_label = QLabel("Derivative:")
-        deriv_label.setToolTip(
-            "Spectral derivatives enhance resolution and remove baseline effects.\n\n"
-            "📊 1st derivative: Removes constant baseline\n"
-            "📉 2nd derivative: Removes linear baseline\n"
-            "⚠️ Amplifies noise - use with smoothing"
-        )
-        prep_layout.addWidget(deriv_label, 3, 0)
+        prep_layout.addWidget(deriv_label, 2, 0)
         self.combo_deriv = QComboBox()
-        self.combo_deriv.addItems(["None", "1st Derivative", "2nd Derivative"])
-        self.combo_deriv.setToolTip("Apply spectral derivative transformation")
+        self.combo_deriv.addItems(["None", "1st", "2nd"])
         self.combo_deriv.currentTextChanged.connect(self._render_previews)
-        prep_layout.addWidget(self.combo_deriv, 3, 1)
+        prep_layout.addWidget(self.combo_deriv, 2, 1, 1, 2)
         
         self.cb_baseline = QCheckBox("Baseline Correction")
-        self.cb_baseline.setToolTip(
-            "Asymmetric Least Squares (ALS) baseline correction.\n\n"
-            "📊 Removes systematic baseline drift\n"
-            "🔬 Corrects fluorescence effects\n"
-            "💡 Useful for noisy or drifting baselines"
-        )
+        self.cb_baseline.setToolTip("ALS baseline correction")
         self.cb_baseline.stateChanged.connect(self._render_previews)
-        prep_layout.addWidget(self.cb_baseline, 4, 0, 1, 2)
+        prep_layout.addWidget(self.cb_baseline, 3, 0, 1, 3)
         
-        prep_layout.setColumnStretch(1, 1)
         prep_group.setLayout(prep_layout)
-        layout.addWidget(prep_group)
+        left_column.addWidget(prep_group)
 
-        # 3. Preview
-        preview_group = QGroupBox("Step 3: Spectral Preview")
-        preview_layout = QHBoxLayout()
-        preview_layout.setSpacing(16)
-        
-        self.fig_orig = FigureCanvas(Figure(figsize=(5, 3), facecolor='none'))
-        self.fig_orig.setMinimumHeight(250)
-        self.fig_prep = FigureCanvas(Figure(figsize=(5, 3), facecolor='none'))
-        self.fig_prep.setMinimumHeight(250)
-        
-        preview_layout.addWidget(self.fig_orig)
-        preview_layout.addWidget(self.fig_prep)
-        
-        preview_group.setLayout(preview_layout)
-        layout.addWidget(preview_group)
-
-        # 4. Model Selection
-        model_group = QGroupBox("Step 4: Select Models to Train")
+        # 3. Model Selection (Compact)
+        model_group = QGroupBox("🤖 Models")
         model_grid = QGridLayout()
-        model_grid.setSpacing(8)
+        model_grid.setSpacing(6)
         
         # Linear Models
         linear_label = QLabel("Linear Models:")
-        linear_label.setStyleSheet("font-weight: 600; font-size: 14px;")
-        linear_label.setToolTip("Linear regression models with regularization")
-        model_grid.addWidget(linear_label, 0, 0, 1, 4)
+        linear_label.setStyleSheet("font-weight: 600; color: #667eea; font-size: 12px;")
+        model_grid.addWidget(linear_label, 0, 0, 1, 2)
         
         self.cb_plsr = QCheckBox("PLSR")
         self.cb_plsr.setChecked(True)
-        self.cb_plsr.setToolTip(
-            "Partial Least Squares Regression\n\n"
-            "📊 Finds latent variables maximizing covariance\n"
-            "🔬 Excellent for multicollinearity\n"
-            "⭐ Best for high-dimensional spectral data\n"
-            "✅ Handles correlated features well"
-        )
+        self.cb_plsr.setToolTip("Partial Least Squares Regression")
         model_grid.addWidget(self.cb_plsr, 1, 0)
         
-        self.cb_ridge = QCheckBox("Ridge Regression")
-        self.cb_ridge.setToolTip(
-            "Ridge Regression (L2 Regularization)\n\n"
-            "📊 Shrinks coefficients to prevent overfitting\n"
-            "🔬 Robust to multicollinearity\n"
-            "⚖️ Balances bias-variance tradeoff\n"
-            "💡 Good for spectral data with noise"
-        )
+        self.cb_ridge = QCheckBox("Ridge")
+        self.cb_ridge.setToolTip("Ridge Regression (L2)")
         model_grid.addWidget(self.cb_ridge, 1, 1)
         
         self.cb_lasso = QCheckBox("Lasso")
-        self.cb_lasso.setToolTip(
-            "Lasso Regression (L1 Regularization)\n\n"
-            "📊 Performs automatic feature selection\n"
-            "🎯 Sets some coefficients to zero\n"
-            "🔍 Identifies important wavelengths\n"
-            "💡 Use when features are sparse"
-        )
-        model_grid.addWidget(self.cb_lasso, 1, 2)
+        self.cb_lasso.setToolTip("Lasso Regression (L1)")
+        model_grid.addWidget(self.cb_lasso, 2, 0)
         
         self.cb_elastic = QCheckBox("ElasticNet")
-        self.cb_elastic.setToolTip(
-            "Elastic Net (L1 + L2 Regularization)\n\n"
-            "📊 Combines Lasso and Ridge benefits\n"
-            "🎯 Feature selection + shrinkage\n"
-            "⭐ Optimal for correlated features\n"
-            "💡 Best of both regularization worlds"
-        )
-        model_grid.addWidget(self.cb_elastic, 1, 3)
+        self.cb_elastic.setToolTip("Elastic Net (L1+L2)")
+        model_grid.addWidget(self.cb_elastic, 2, 1)
         
         # Ensemble Models
-        ensemble_label = QLabel("Ensemble Models (Tree-Based):")
-        ensemble_label.setStyleSheet("font-weight: 600; font-size: 14px; margin-top: 8px;")
-        ensemble_label.setToolTip("Tree-based ensemble methods (no scaling needed)")
-        model_grid.addWidget(ensemble_label, 2, 0, 1, 4)
+        ensemble_label = QLabel("Ensemble (Tree-Based):")
+        ensemble_label.setStyleSheet("font-weight: 600; color: #4facfe; font-size: 12px; margin-top: 6px;")
+        model_grid.addWidget(ensemble_label, 3, 0, 1, 2)
         
         self.cb_rf = QCheckBox("Random Forest")
-        self.cb_rf.setToolTip(
-            "Random Forest Regression\n\n"
-            "🌲 Ensemble of decision trees\n"
-            "📊 Non-parametric, handles non-linearity\n"
-            "🎯 Provides feature importance\n"
-            "⚠️ No scaling required (tree-based)\n"
-            "💡 Robust to outliers and noise"
-        )
-        model_grid.addWidget(self.cb_rf, 3, 0)
+        self.cb_rf.setToolTip("Random Forest Regressor")
+        model_grid.addWidget(self.cb_rf, 4, 0)
         
         self.cb_xgb = QCheckBox("XGBoost")
-        self.cb_xgb.setToolTip(
-            "Extreme Gradient Boosting\n\n"
-            "🚀 Advanced gradient boosting framework\n"
-            "⚡ Fast with parallel processing\n"
-            "🎯 Built-in regularization\n"
-            "⚠️ No scaling, uses default parameters\n"
-            "⭐ Often best for complex patterns\n"
-            "💡 Excellent for high-dimensional data"
-        )
-        model_grid.addWidget(self.cb_xgb, 3, 1)
+        self.cb_xgb.setToolTip("Extreme Gradient Boosting")
+        model_grid.addWidget(self.cb_xgb, 4, 1)
         
         # Neural & Kernel
-        other_label = QLabel("Neural & Kernel Models:")
-        other_label.setStyleSheet("font-weight: 600; font-size: 14px; margin-top: 8px;")
-        other_label.setToolTip("Advanced non-linear models")
-        model_grid.addWidget(other_label, 4, 0, 1, 4)
+        other_label = QLabel("Neural & Kernel:")
+        other_label.setStyleSheet("font-weight: 600; color: #a8e063; font-size: 12px; margin-top: 6px;")
+        model_grid.addWidget(other_label, 5, 0, 1, 2)
         
-        self.cb_mlp = QCheckBox("MLP (Neural Network)")
-        self.cb_mlp.setToolTip(
-            "Multi-Layer Perceptron Neural Network\n\n"
-            "🧠 Feedforward neural network\n"
-            "📊 Captures complex non-linear patterns\n"
-            "🔄 Learns through backpropagation\n"
-            "⚠️ Requires more data than linear models\n"
-            "💡 Powerful but can overfit"
-        )
-        model_grid.addWidget(self.cb_mlp, 5, 0)
+        self.cb_mlp = QCheckBox("MLP")
+        self.cb_mlp.setToolTip("Multi-Layer Perceptron")
+        model_grid.addWidget(self.cb_mlp, 6, 0)
         
-        self.cb_svr = QCheckBox("SVR (Support Vector)")
-        self.cb_svr.setToolTip(
-            "Support Vector Regression\n\n"
-            "🎯 Kernel-based non-linear regression\n"
-            "📊 Optimal hyperplane in feature space\n"
-            "🔬 Excellent for non-linear relationships\n"
-            "⚠️ Can be slow with large datasets\n"
-            "💡 Works well with RBF kernel"
-        )
-        model_grid.addWidget(self.cb_svr, 5, 1)
+        self.cb_svr = QCheckBox("SVR")
+        self.cb_svr.setToolTip("Support Vector Regression")
+        model_grid.addWidget(self.cb_svr, 6, 1)
         
-        model_grid.setColumnStretch(4, 1)
+        model_grid.setColumnStretch(2, 1)
         model_group.setLayout(model_grid)
-        layout.addWidget(model_group)
+        left_column.addWidget(model_group)
 
-        # 5. Training Configuration
-        train_group = QGroupBox("Step 5: Training Parameters")
+        # 4. Training Config (Compact)
+        train_group = QGroupBox("🚀 Training")
         train_layout = QGridLayout()
-        train_layout.setSpacing(12)
+        train_layout.setSpacing(8)
         
-        split_label = QLabel("Split Method:")
-        split_label.setToolTip(
-            "Data splitting strategy for train/test sets.\n\n"
-            "🎯 Kennard-Stone: Maximizes spectral diversity\n"
-            "🎲 Random: Simple random sampling\n"
-            "💡 Recommended: Kennard-Stone for spectral data"
-        )
+        split_label = QLabel("Split:")
         train_layout.addWidget(split_label, 0, 0)
         self.combo_split = QComboBox()
         self.combo_split.addItems(["Kennard-Stone", "Random"])
-        self.combo_split.setToolTip(
-            "Kennard-Stone selects representative samples for better model generalization"
-        )
         train_layout.addWidget(self.combo_split, 0, 1)
         
-        ratio_label = QLabel("Train Split Ratio:")
-        ratio_label.setToolTip(
-            "Proportion of data for training vs validation.\n\n"
-            "⬆️ Higher = more training data\n"
-            "⬇️ Lower = more validation data\n"
-            "💡 Recommended: 0.6-0.8"
-        )
-        train_layout.addWidget(ratio_label, 0, 2)
+        ratio_label = QLabel("Ratio:")
+        train_layout.addWidget(ratio_label, 1, 0)
         self.split_train = QDoubleSpinBox()
         self.split_train.setRange(0.5, 0.95)
         self.split_train.setSingleStep(0.05)
         self.split_train.setValue(0.7)
-        self.split_train.setToolTip("Fraction of data used for training (0.7 = 70% train, 30% test)")
-        train_layout.addWidget(self.split_train, 0, 3)
+        train_layout.addWidget(self.split_train, 1, 1)
         
         cv_label = QLabel("CV Folds:")
-        cv_label.setToolTip(
-            "Cross-validation folds for model evaluation.\n\n"
-            "📊 Higher = more robust estimates\n"
-            "⚠️ Higher = longer computation time\n"
-            "💡 Recommended: 5-7 for spectral data"
-        )
-        train_layout.addWidget(cv_label, 1, 0)
+        train_layout.addWidget(cv_label, 2, 0)
         self.spin_cv = QSpinBox()
         self.spin_cv.setRange(2, 10)
         self.spin_cv.setValue(5)
-        self.spin_cv.setToolTip("Number of folds for k-fold cross-validation")
-        train_layout.addWidget(self.spin_cv, 1, 1)
+        train_layout.addWidget(self.spin_cv, 2, 1)
         
-        opt_label = QLabel("Optimization:")
-        opt_label.setToolTip(
-            "Hyperparameter optimization strategy.\n\n"
-            "🧠 Bayesian: Smart search using Gaussian Process\n"
-            "🎲 Random: Random sampling of parameters\n"
-            "🔍 Grid: Exhaustive search (slowest)\n"
-            "💡 Recommended: Bayesian for best results"
-        )
-        train_layout.addWidget(opt_label, 1, 2)
+        opt_label = QLabel("Optimizer:")
+        train_layout.addWidget(opt_label, 3, 0)
         self.combo_opt = QComboBox()
         self.combo_opt.addItems(["bayesian", "random_search", "grid_search"])
-        self.combo_opt.setToolTip("Bayesian optimization is most efficient for finding optimal parameters")
-        train_layout.addWidget(self.combo_opt, 1, 3)
+        train_layout.addWidget(self.combo_opt, 3, 1)
         
-        trials_label = QLabel("Optimization Trials:")
-        trials_label.setToolTip(
-            "Number of optimization iterations.\n\n"
-            "⬆️ More trials = better parameters\n"
-            "⬆️ More trials = longer computation\n"
-            "🔍 Grid search ignores this setting\n"
-            "💡 Recommended: 30-50"
-        )
-        train_layout.addWidget(trials_label, 2, 0)
+        trials_label = QLabel("Trials:")
+        train_layout.addWidget(trials_label, 4, 0)
         self.spin_trials = QSpinBox()
         self.spin_trials.setRange(10, 200)
         self.spin_trials.setSingleStep(10)
         self.spin_trials.setValue(30)
-        self.spin_trials.setToolTip("Number of hyperparameter trials (Bayesian/Random search only)")
-        train_layout.addWidget(self.spin_trials, 2, 1)
+        train_layout.addWidget(self.spin_trials, 4, 1)
         
-        self.cb_earlystopping = QCheckBox("Enable Early Stopping")
+        self.cb_earlystopping = QCheckBox("Early Stopping")
         self.cb_earlystopping.setChecked(True)
-        self.cb_earlystopping.setToolTip(
-            "Stop optimization early if no improvement.\n\n"
-            "⚡ Reduces computation time\n"
-            "⚠️ May miss optimal parameters\n"
-            "💡 Generally safe to enable"
-        )
-        train_layout.addWidget(self.cb_earlystopping, 2, 2, 1, 2)
+        train_layout.addWidget(self.cb_earlystopping, 5, 0, 1, 2)
         
-        train_layout.setColumnStretch(4, 1)
+        train_layout.setColumnStretch(1, 1)
         train_group.setLayout(train_layout)
-        layout.addWidget(train_group)
+        left_column.addWidget(train_group)
 
-        # Train button and status
-        button_layout = QHBoxLayout()
-        button_layout.setSpacing(12)
-        
-        self.train_btn = QPushButton("🚀 Train Selected Models")
-        self.train_btn.setMinimumHeight(44)
+        # Train button
+        self.train_btn = QPushButton("🚀 Train Models")
+        self.train_btn.setMinimumHeight(40)
         self.train_btn.setEnabled(False)
-        self.train_btn.setToolTip(
-            "Train all selected models with automatic hyperparameter optimization.\n\n"
-            "⚙️ Preprocessing applied first\n"
-            "🎯 Bayesian optimization for best parameters\n"
-            "📊 Cross-validation for robust evaluation\n"
-            "⏱️ May take several minutes depending on models and data size"
-        )
-        self.train_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                font-size: 15px;
-                font-weight: 600;
-            }
-            QPushButton:hover:enabled {
-                background-color: #45a049;
-            }
-            QPushButton:pressed:enabled {
-                background-color: #3d8b40;
-            }
-        """)
+        self.train_btn.setProperty("class", "primary-btn")
         self.train_btn.clicked.connect(self._train_models)
-        button_layout.addWidget(self.train_btn)
-        
-        layout.addLayout(button_layout)
+        left_column.addWidget(self.train_btn)
 
         self.status = QLabel("Load a dataset to begin")
+        self.status.setProperty("class", "info-box")
         self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status.setStyleSheet("""
-            padding: 12px;
-            border-radius: 6px;
-            background: palette(midlight);
-            font-size: 13px;
-        """)
-        layout.addWidget(self.status)
+        left_column.addWidget(self.status)
 
-        # 6. Results
-        results_group = QGroupBox("Training Results")
+        left_column.addStretch()
+        
+        # RIGHT COLUMN - Visualization
+        right_column = QVBoxLayout()
+        right_column.setSpacing(15)
+
+        # Preview plots
+        preview_group = QGroupBox("📊 Spectral Preview")
+        preview_layout = QVBoxLayout()
+        preview_layout.setSpacing(10)
+        
+        preview_label_orig = QLabel("Original:")
+        preview_label_orig.setStyleSheet("font-weight: 600; color: #667eea;")
+        preview_layout.addWidget(preview_label_orig)
+        
+        self.fig_orig = FigureCanvas(Figure(figsize=(8, 3), facecolor='none'))
+        self.fig_orig.setMinimumHeight(200)
+        preview_layout.addWidget(self.fig_orig)
+        
+        preview_label_prep = QLabel("Preprocessed:")
+        preview_label_prep.setStyleSheet("font-weight: 600; color: #4facfe;")
+        preview_layout.addWidget(preview_label_prep)
+        
+        self.fig_prep = FigureCanvas(Figure(figsize=(8, 3), facecolor='none'))
+        self.fig_prep.setMinimumHeight(200)
+        preview_layout.addWidget(self.fig_prep)
+        
+        preview_group.setLayout(preview_layout)
+        right_column.addWidget(preview_group)
+
+        # Results tabs
+        results_group = QGroupBox("📊 Training Results")
         results_layout = QVBoxLayout()
         
         self.table = QTableWidget(0, 6)
@@ -413,98 +266,106 @@ class CalibrationView(QWidget):
         ])
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
-        self.table.setMinimumHeight(200)
-        # (moved into Training Metrics tab below)
+        self.table.setMinimumHeight(150)
         
-        self.export_btn = QPushButton("💾 Export Metrics to CSV...")
+        self.export_btn = QPushButton("💾 Export Metrics")
         self.export_btn.setEnabled(False)
         self.export_btn.clicked.connect(self._export_metrics)
-        # (moved into Training Metrics tab below)
         
-        # Analysis tabs (Model Comparison, Predictions, Feature Importance, Export)
-        # Placed inside results group to avoid layout squashing
         self.tabs = QTabWidget()
+        
         # Training Metrics tab
         self.tab_metrics = QWidget()
         metrics_layout = QVBoxLayout(self.tab_metrics)
         metrics_layout.addWidget(self.table)
         metrics_layout.addWidget(self.export_btn)
-        self.tabs.addTab(self.tab_metrics, "Training Metrics")
+        self.tabs.addTab(self.tab_metrics, "📈 Metrics")
 
         # Model Comparison tab
         self.tab_compare = QWidget()
         compare_layout = QVBoxLayout(self.tab_compare)
-        self.fig_compare = FigureCanvas(Figure(figsize=(8, 8), facecolor='none'))
-        self.fig_compare.setMinimumHeight(600)
+        self.fig_compare = FigureCanvas(Figure(figsize=(10, 8), facecolor='none'))
+        self.fig_compare.setMinimumHeight(500)
         compare_layout.addWidget(self.fig_compare)
-        self.tabs.addTab(self.tab_compare, "Model Comparison")
+        self.tabs.addTab(self.tab_compare, "📊 Compare")
 
         # Predictions tab
         self.tab_predict = QWidget()
         predict_layout = QVBoxLayout(self.tab_predict)
-        # selector
+        
         selector_row = QHBoxLayout()
         selector_row.addWidget(QLabel("Model:"))
         self.combo_predict_model = QComboBox()
         selector_row.addWidget(self.combo_predict_model)
-        selector_row.addStretch(1)
+        selector_row.addStretch()
         predict_layout.addLayout(selector_row)
-        # plots
-        self.fig_pred_vs_actual = FigureCanvas(Figure(figsize=(5.5, 5.5), facecolor='none'))
-        self.fig_pred_vs_actual.setMinimumHeight(420)
-        self.fig_residuals = FigureCanvas(Figure(figsize=(5.5, 5.5), facecolor='none'))
-        self.fig_residuals.setMinimumHeight(420)
+        
+        self.fig_pred_vs_actual = FigureCanvas(Figure(figsize=(5, 4), facecolor='none'))
+        self.fig_pred_vs_actual.setMinimumHeight(300)
+        self.fig_residuals = FigureCanvas(Figure(figsize=(5, 4), facecolor='none'))
+        self.fig_residuals.setMinimumHeight(300)
+        
         plots_row = QHBoxLayout()
         plots_row.addWidget(self.fig_pred_vs_actual)
         plots_row.addWidget(self.fig_residuals)
         predict_layout.addLayout(plots_row)
-        self.tabs.addTab(self.tab_predict, "Predictions")
+        self.tabs.addTab(self.tab_predict, "🎯 Predict")
 
         # Feature Importance tab
         self.tab_importance = QWidget()
         importance_layout = QVBoxLayout(self.tab_importance)
+        
         sel_imp_row = QHBoxLayout()
         sel_imp_row.addWidget(QLabel("Model:"))
         self.combo_importance_model = QComboBox()
         sel_imp_row.addWidget(self.combo_importance_model)
-        sel_imp_row.addStretch(1)
+        sel_imp_row.addStretch()
         importance_layout.addLayout(sel_imp_row)
-        self.fig_importance = FigureCanvas(Figure(figsize=(10, 5), facecolor='none'))
-        self.fig_importance.setMinimumHeight(380)
+        
+        self.fig_importance = FigureCanvas(Figure(figsize=(8, 4), facecolor='none'))
+        self.fig_importance.setMinimumHeight(300)
         importance_layout.addWidget(self.fig_importance)
-        self.tabs.addTab(self.tab_importance, "Feature Importance")
+        self.tabs.addTab(self.tab_importance, "🔍 Importance")
 
-        # Export tab (models only)
+        # Export tab
         self.tab_export = QWidget()
         export_layout = QVBoxLayout(self.tab_export)
+        
         selector_row_exp = QHBoxLayout()
         selector_row_exp.addWidget(QLabel("Model:"))
         self.combo_export_model = QComboBox()
         selector_row_exp.addWidget(self.combo_export_model)
-        selector_row_exp.addStretch(1)
+        selector_row_exp.addStretch()
         export_layout.addLayout(selector_row_exp)
-        self.btn_export_selected = QPushButton("📥 Export Selected Model")
+        
+        self.btn_export_selected = QPushButton("📥 Export Selected")
+        self.btn_export_selected.setMinimumHeight(36)
         self.btn_export_selected.clicked.connect(self._export_selected_model)
-        self.btn_export_all = QPushButton("📦 Export All Models (ZIP)")
-        self.btn_export_all.clicked.connect(self._export_all_zip)
         export_layout.addWidget(self.btn_export_selected)
+        
+        self.btn_export_all = QPushButton("📦 Export All (ZIP)")
+        self.btn_export_all.setMinimumHeight(36)
+        self.btn_export_all.clicked.connect(self._export_all_zip)
         export_layout.addWidget(self.btn_export_all)
-        export_layout.addStretch(1)
-        self.tabs.addTab(self.tab_export, "Export")
+        
+        export_layout.addStretch()
+        self.tabs.addTab(self.tab_export, "💾 Export")
 
-        # Best model label (under tabs)
+        # Best model label
         self.best_label = QLabel("")
         self.best_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.best_label.setStyleSheet("""
-            padding: 10px; border-radius: 6px; background: #e3f2fd; font-size: 13px;
-        """)
+        self.best_label.setProperty("class", "info-box")
 
-        # Add tabs and best label inside results group
         results_layout.addWidget(self.tabs)
         results_layout.addWidget(self.best_label)
         results_group.setLayout(results_layout)
-        layout.addWidget(results_group)
-
+        right_column.addWidget(results_group)
+        
+        # Add columns to main content
+        main_content.addLayout(left_column, stretch=1)
+        main_content.addLayout(right_column, stretch=2)
+        
+        layout.addLayout(main_content)
         layout.addStretch()
         scroll.setWidget(content)
         
@@ -589,8 +450,8 @@ class CalibrationView(QWidget):
             smoothing_polyorder=int(self.spin_poly.value()),
             derivative={
                 "None": None, 
-                "1st Derivative": 1, 
-                "2nd Derivative": 2
+                "1st": 1, 
+                "2nd": 2
             }[self.combo_deriv.currentText()],
             baseline_correction=self.cb_baseline.isChecked(),
         )
@@ -898,40 +759,57 @@ class CalibrationView(QWidget):
         mae = [res.metrics.mae for res in self._model_results.values()]
         times = [res.metrics.training_time for res in self._model_results.values()]
         x = np.arange(len(names))
+        
         # R2
         ax = axs[0,0]
         width = 0.35
         ax.bar(x - width/2, train_r2, width, label='Train')
         ax.bar(x + width/2, test_r2, width, label='Test')
-        ax.set_xticks(x, [n.upper() for n in names], rotation=45)
-        for lbl in ax.get_xticklabels():
-            lbl.set_ha('right')
-        ax.legend()
-        self._apply_axes_theme(ax, 'R² Score')
+        ax.set_xticks(x)
+        ax.set_xticklabels([n.upper() for n in names], rotation=60, ha='right', fontsize=8)
+        ax.legend(fontsize=8, loc='upper left')
+        ax.set_title('R² Score', fontsize=10, fontweight='bold', pad=10)
+        ax.tick_params(axis='y', labelsize=8)
+        ax.grid(axis='y', alpha=0.3, linestyle='--')
+        
         # RMSE
         ax = axs[0,1]
-        ax.bar(x, rmse)
-        ax.set_xticks(x, [n.upper() for n in names], rotation=45)
-        for lbl in ax.get_xticklabels():
-            lbl.set_ha('right')
-        self._apply_axes_theme(ax, 'RMSE')
+        ax.bar(x, rmse, color='#4facfe')
+        ax.set_xticks(x)
+        ax.set_xticklabels([n.upper() for n in names], rotation=60, ha='right', fontsize=8)
+        ax.set_title('RMSE', fontsize=10, fontweight='bold', pad=10)
+        ax.tick_params(axis='y', labelsize=8)
+        ax.grid(axis='y', alpha=0.3, linestyle='--')
+        
         # MAE
         ax = axs[1,0]
-        ax.bar(x, mae)
-        ax.set_xticks(x, [n.upper() for n in names], rotation=45)
-        for lbl in ax.get_xticklabels():
-            lbl.set_ha('right')
-        self._apply_axes_theme(ax, 'MAE')
+        ax.bar(x, mae, color='#a8e063')
+        ax.set_xticks(x)
+        ax.set_xticklabels([n.upper() for n in names], rotation=60, ha='right', fontsize=8)
+        ax.set_title('MAE', fontsize=10, fontweight='bold', pad=10)
+        ax.tick_params(axis='y', labelsize=8)
+        ax.grid(axis='y', alpha=0.3, linestyle='--')
+        
         # Time
         ax = axs[1,1]
-        ax.bar(x, times)
-        ax.set_xticks(x, [n.upper() for n in names], rotation=45)
-        for lbl in ax.get_xticklabels():
-            lbl.set_ha('right')
-        self._apply_axes_theme(ax, 'Training Time (s)')
-        # Increase vertical spacing and bottom margin so bottom-row tick labels have room
-        fig.tight_layout()
-        fig.subplots_adjust(hspace=0.45, bottom=0.22)
+        ax.bar(x, times, color='#ffa502')
+        ax.set_xticks(x)
+        ax.set_xticklabels([n.upper() for n in names], rotation=60, ha='right', fontsize=8)
+        ax.set_title('Training Time (s)', fontsize=10, fontweight='bold', pad=10)
+        ax.tick_params(axis='y', labelsize=8)
+        ax.grid(axis='y', alpha=0.3, linestyle='--')
+        
+        # Apply theme to all axes
+        for ax in axs.flat:
+            ax.set_facecolor('#ffffff')
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color('#cccccc')
+            ax.spines['bottom'].set_color('#cccccc')
+        
+        # Increase spacing significantly to prevent overlapping
+        fig.tight_layout(pad=2.5)
+        fig.subplots_adjust(hspace=0.45, wspace=0.30, bottom=0.20, top=0.93, left=0.10, right=0.95)
         self.fig_compare.draw_idle()
 
     def _render_predictions_tab(self):

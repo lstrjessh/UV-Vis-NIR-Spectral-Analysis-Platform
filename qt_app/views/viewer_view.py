@@ -26,176 +26,148 @@ class ViewerView(QWidget):
         
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(100, 20, 100, 20)
-        layout.setSpacing(18)
+        layout.setContentsMargins(60, 20, 60, 20)
+        layout.setSpacing(20)
 
         # Title
-        title = QLabel("Spectrum Viewer")
-        title_font = QFont()
-        title_font.setPointSize(24)
-        title_font.setBold(True)
-        title.setFont(title_font)
+        title = QLabel("👁️ Spectrum Viewer")
+        title.setProperty("class", "title")
         layout.addWidget(title)
 
         subtitle = QLabel("Load and visualize multiple spectra with customizable processing options")
-        subtitle.setStyleSheet("color: #444444; font-size: 14px; margin-bottom: 8px;")
+        subtitle.setProperty("class", "subtitle")
         layout.addWidget(subtitle)
+        
+        # Main content layout
+        main_content = QHBoxLayout()
+        main_content.setSpacing(20)
+        
+        # Left column - Controls
+        left_column = QVBoxLayout()
+        left_column.setSpacing(15)
 
         # File selection
-        file_group = QGroupBox("Load Spectral Files")
-        file_layout = QHBoxLayout()
+        file_group = QGroupBox("📁 Load Files")
+        file_layout = QVBoxLayout()
+        file_layout.setSpacing(10)
         
         btn = QPushButton("📂 Select Spectrum Files...")
-        btn.setMinimumHeight(44)
-        btn.setToolTip(
-            "Load multiple spectral files for comparison.\n\n"
-            "📋 Supported: CSV, TXT, DAT files\n"
-            "📊 Overlay and compare spectra\n"
-            "🎨 Automatic color coding\n"
-            "💡 Great for replicate comparison"
-        )
+        btn.setMinimumHeight(40)
+        btn.setToolTip("Load multiple spectral files for comparison")
         btn.clicked.connect(self._pick_files)
         file_layout.addWidget(btn)
         
         self.file_count = QLabel("No files loaded")
-        self.file_count.setStyleSheet("color: #555555; font-size: 13px;")
+        self.file_count.setStyleSheet("color: #888888; font-size: 10pt;")
         file_layout.addWidget(self.file_count)
-        file_layout.addStretch()
         
         file_group.setLayout(file_layout)
-        layout.addWidget(file_group)
+        left_column.addWidget(file_group)
 
-        # Processing options
-        options_group = QGroupBox("Processing Options")
+        # Processing options (compact)
+        options_group = QGroupBox("⚙️ Processing")
         options_layout = QGridLayout()
-        options_layout.setSpacing(12)
+        options_layout.setSpacing(10)
         
-        # Normalization
+        # Normalization & Smoothing
         self.cb_normalize = QCheckBox("Normalize Intensity")
-        self.cb_normalize.setToolTip(
-            "Scale each spectrum to 0-1 range.\n\n"
-            "📊 Enables intensity comparison\n"
-            "📉 Removes absolute scale differences\n"
-            "💡 Useful for comparing spectra with different magnitudes"
-        )
+        self.cb_normalize.setToolTip("Scale each spectrum to 0-1 range")
         self.cb_normalize.stateChanged.connect(self._render_plot)
-        options_layout.addWidget(self.cb_normalize, 0, 0)
+        options_layout.addWidget(self.cb_normalize, 0, 0, 1, 2)
         
-        # Smoothing
-        self.cb_smooth = QCheckBox("Apply Smoothing")
-        self.cb_smooth.setToolTip(
-            "Apply Gaussian smoothing filter.\n\n"
-            "📊 Reduces high-frequency noise\n"
-            "🔬 Preserves general spectral shape\n"
-            "💡 Adjust sigma for smoothing strength"
-        )
+        self.cb_smooth = QCheckBox("Apply Gaussian Smoothing")
+        self.cb_smooth.setToolTip("Reduce high-frequency noise")
         self.cb_smooth.stateChanged.connect(self._render_plot)
-        options_layout.addWidget(self.cb_smooth, 0, 1)
+        options_layout.addWidget(self.cb_smooth, 1, 0, 1, 2)
         
         sigma_label = QLabel("Smoothing σ:")
-        sigma_label.setToolTip(
-            "Gaussian filter standard deviation.\n\n"
-            "⬆️ Higher = more smoothing\n"
-            "⬇️ Lower = less smoothing\n"
-            "💡 Typical: 1.0-2.0 for spectral data"
-        )
-        options_layout.addWidget(sigma_label, 1, 0)
+        options_layout.addWidget(sigma_label, 2, 0)
         self.spin_sigma = QDoubleSpinBox()
         self.spin_sigma.setRange(0.1, 10.0)
         self.spin_sigma.setSingleStep(0.1)
         self.spin_sigma.setValue(1.0)
-        self.spin_sigma.setToolTip("Standard deviation for Gaussian smoothing (sigma)")
+        self.spin_sigma.setToolTip("Standard deviation for Gaussian filter")
         self.spin_sigma.valueChanged.connect(self._render_plot)
-        options_layout.addWidget(self.spin_sigma, 1, 1)
+        options_layout.addWidget(self.spin_sigma, 2, 1)
         
         # Peak detection
-        self.cb_peaks = QCheckBox("Show Peaks")
-        self.cb_peaks.setToolTip(
-            "Detect and mark spectral peaks.\n\n"
-            "🎯 Identifies maxima in spectra\n"
-            "💎 Marks peaks with diamond markers\n"
-            "📋 Lists peaks in table below"
-        )
+        self.cb_peaks = QCheckBox("Detect & Show Peaks")
+        self.cb_peaks.setToolTip("Identify and mark spectral maxima")
         self.cb_peaks.stateChanged.connect(self._render_plot)
-        options_layout.addWidget(self.cb_peaks, 2, 0, 1, 2)
+        options_layout.addWidget(self.cb_peaks, 3, 0, 1, 2)
         
         height_label = QLabel("Min Height:")
-        height_label.setToolTip(
-            "Minimum peak height threshold.\n\n"
-            "📏 Lower for normalized spectra\n"
-            "⬆️ Higher = fewer, stronger peaks\n"
-            "💡 Adjust based on data scale"
-        )
-        options_layout.addWidget(height_label, 3, 0)
+        options_layout.addWidget(height_label, 4, 0)
         self.spin_height = QDoubleSpinBox()
         self.spin_height.setRange(0.0, 10.0)
         self.spin_height.setSingleStep(0.01)
         self.spin_height.setValue(0.01)
         self.spin_height.setToolTip("Minimum intensity for peak detection")
         self.spin_height.valueChanged.connect(self._render_plot)
-        options_layout.addWidget(self.spin_height, 3, 1)
+        options_layout.addWidget(self.spin_height, 4, 1)
         
-        distance_label = QLabel("Min Distance (nm):")
-        distance_label.setToolTip(
-            "Minimum separation between peaks.\n\n"
-            "📏 Prevents detecting nearby peaks\n"
-            "⬇️ Lower = detects close peaks\n"
-            "💡 Typical: 5-20 nm"
-        )
-        options_layout.addWidget(distance_label, 4, 0)
+        distance_label = QLabel("Min Distance:")
+        options_layout.addWidget(distance_label, 5, 0)
         self.spin_distance = QDoubleSpinBox()
         self.spin_distance.setRange(1.0, 100.0)
         self.spin_distance.setSingleStep(0.5)
         self.spin_distance.setValue(5.0)
-        self.spin_distance.setToolTip("Minimum distance between peaks in nanometers")
+        self.spin_distance.setSuffix(" nm")
+        self.spin_distance.setToolTip("Min wavelength separation")
         self.spin_distance.valueChanged.connect(self._render_plot)
-        options_layout.addWidget(self.spin_distance, 4, 1)
+        options_layout.addWidget(self.spin_distance, 5, 1)
         
         prom_label = QLabel("Min Prominence:")
-        prom_label.setToolTip(
-            "Peak prominence threshold.\n\n"
-            "📏 How much peak stands out\n"
-            "⬆️ Higher = only prominent peaks\n"
-            "💡 Typical: 0.01-0.1"
-        )
-        options_layout.addWidget(prom_label, 5, 0)
+        options_layout.addWidget(prom_label, 6, 0)
         self.spin_prom = QDoubleSpinBox()
         self.spin_prom.setRange(0.0, 10.0)
         self.spin_prom.setSingleStep(0.01)
         self.spin_prom.setValue(0.01)
-        self.spin_prom.setToolTip("Minimum peak prominence")
+        self.spin_prom.setToolTip("Peak prominence")
         self.spin_prom.valueChanged.connect(self._render_plot)
-        options_layout.addWidget(self.spin_prom, 5, 1)
+        options_layout.addWidget(self.spin_prom, 6, 1)
         
         options_layout.setColumnStretch(1, 1)
         options_group.setLayout(options_layout)
-        layout.addWidget(options_group)
+        left_column.addWidget(options_group)
+        
+        left_column.addStretch()
+        
+        # Right column - Visualization
+        right_column = QVBoxLayout()
+        right_column.setSpacing(15)
 
         # Plot
-        plot_group = QGroupBox("Spectrum Visualization")
+        plot_group = QGroupBox("📈 Spectrum Overlay")
         plot_layout = QVBoxLayout()
         
         self.figure = Figure(figsize=(10, 6), facecolor='none')
         self.canvas = FigureCanvas(self.figure)
-        self.canvas.setMinimumHeight(450)
+        self.canvas.setMinimumHeight(400)
         plot_layout.addWidget(self.canvas)
         
         plot_group.setLayout(plot_layout)
-        layout.addWidget(plot_group)
+        right_column.addWidget(plot_group)
 
-        # Peak table
-        table_group = QGroupBox("Detected Peaks")
+        # Peak table (compact)
+        table_group = QGroupBox("🎯 Detected Peaks")
         table_layout = QVBoxLayout()
         
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["Spectrum", "Wavelength (nm)", "Intensity"])
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
-        self.table.setMinimumHeight(200)
+        self.table.setMaximumHeight(200)
         table_layout.addWidget(self.table)
         
         table_group.setLayout(table_layout)
-        layout.addWidget(table_group)
+        right_column.addWidget(table_group)
+        
+        # Add columns to main content
+        main_content.addLayout(left_column, stretch=1)
+        main_content.addLayout(right_column, stretch=2)
+        
+        layout.addLayout(main_content)
 
         layout.addStretch()
         scroll.setWidget(content)

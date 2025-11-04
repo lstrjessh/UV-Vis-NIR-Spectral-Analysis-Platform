@@ -22,106 +22,102 @@ class PredictView(QWidget):
         
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(100, 20, 100, 20)
-        layout.setSpacing(18)
+        layout.setContentsMargins(60, 20, 60, 20)
+        layout.setSpacing(20)
         
         # Title
-        title = QLabel("Predict Concentration")
-        title_font = QFont()
-        title_font.setPointSize(24)
-        title_font.setBold(True)
-        title.setFont(title_font)
+        title = QLabel("🎯 Predict Concentration")
+        title.setProperty("class", "title")
         layout.addWidget(title)
 
         subtitle = QLabel("Apply trained models to new spectral data for concentration predictions")
-        subtitle.setStyleSheet("color: #444444; font-size: 14px; margin-bottom: 8px;")
+        subtitle.setProperty("class", "subtitle")
         layout.addWidget(subtitle)
 
-        # Step 1: Load Model
-        model_group = QGroupBox("Step 1: Load Trained Model")
-        model_layout = QHBoxLayout()
+        # Two-column layout
+        main_content = QHBoxLayout()
+        main_content.setSpacing(20)
         
-        self.model_btn = QPushButton("📂 Load Model File...")
-        self.model_btn.setMinimumHeight(44)
-        self.model_btn.setToolTip(
-            "Load a previously trained calibration model.\n\n"
-            "📋 Supported: .pkl (scikit-learn models)\n"
-            "⚠️ .pth (PyTorch) not yet fully supported\n"
-            "💡 Use models from Calibration tab"
-        )
+        # LEFT COLUMN - Model & Data Loading
+        left_column = QVBoxLayout()
+        left_column.setSpacing(15)
+
+        # Load Model
+        model_group = QGroupBox("📦 Load Model")
+        model_layout = QVBoxLayout()
+        model_layout.setSpacing(10)
+        
+        self.model_btn = QPushButton("📂 Select Model...")
+        self.model_btn.setMinimumHeight(40)
+        self.model_btn.setToolTip("Load trained calibration model (.pkl)")
         self.model_btn.clicked.connect(self._pick_model)
         model_layout.addWidget(self.model_btn)
         
         self.model_status = QLabel("No model loaded")
-        self.model_status.setStyleSheet("color: #555555; font-size: 13px;")
+        self.model_status.setStyleSheet("color: #888; font-size: 12px;")
         model_layout.addWidget(self.model_status)
-        model_layout.addStretch()
         
         model_group.setLayout(model_layout)
-        layout.addWidget(model_group)
+        left_column.addWidget(model_group)
 
-        # Step 2: Load Data
-        data_group = QGroupBox("Step 2: Select Input Spectra")
-        data_layout = QHBoxLayout()
+        # Load Data
+        data_group = QGroupBox("📊 Load Spectra")
+        data_layout = QVBoxLayout()
+        data_layout.setSpacing(10)
         
-        self.data_btn = QPushButton("📊 Select Spectral Files...")
-        self.data_btn.setMinimumHeight(44)
-        self.data_btn.setToolTip(
-            "Select spectral files to predict concentrations.\n\n"
-            "📋 Supported: CSV, TXT, DAT files\n"
-            "📊 Must match model's wavelength range\n"
-            "🔢 Batch processing supported\n"
-            "💡 Apply same preprocessing as training"
-        )
+        self.data_btn = QPushButton("� Select Files...")
+        self.data_btn.setMinimumHeight(40)
+        self.data_btn.setToolTip("Select spectral files to predict")
         self.data_btn.clicked.connect(self._pick_data)
         data_layout.addWidget(self.data_btn)
         
         self.data_status = QLabel("No data loaded")
-        self.data_status.setStyleSheet("color: #555555; font-size: 13px;")
+        self.data_status.setStyleSheet("color: #888; font-size: 12px;")
         data_layout.addWidget(self.data_status)
-        data_layout.addStretch()
         
         data_group.setLayout(data_layout)
-        layout.addWidget(data_group)
+        left_column.addWidget(data_group)
 
         # Status
-        self.status = QLabel("Load model and data to begin predictions")
+        self.status = QLabel("Load model and data to begin")
+        self.status.setProperty("class", "info-box")
         self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status.setStyleSheet("""
-            padding: 12px;
-            border-radius: 6px;
-            background: palette(midlight);
-            font-size: 13px;
-        """)
-        layout.addWidget(self.status)
+        self.status.setWordWrap(True)
+        left_column.addWidget(self.status)
 
-        # Results
-        results_group = QGroupBox("Step 3: Prediction Results")
+        left_column.addStretch()
+        
+        # RIGHT COLUMN - Results
+        right_column = QVBoxLayout()
+        right_column.setSpacing(15)
+
+        # Results table
+        results_group = QGroupBox("📋 Prediction Results")
         results_layout = QVBoxLayout()
         
         self.table = QTableWidget(0, 2)
         self.table.setHorizontalHeaderLabels(["File", "Predicted Concentration"])
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
-        self.table.setMinimumHeight(300)
+        self.table.setMinimumHeight(400)
         results_layout.addWidget(self.table)
 
-        self.export_btn = QPushButton("💾 Export Predictions to CSV...")
+        self.export_btn = QPushButton("💾 Export to CSV")
         self.export_btn.setMinimumHeight(40)
-        self.export_btn.setToolTip(
-            "Export prediction results to CSV file.\n\n"
-            "📋 Format: filename, predicted concentration\n"
-            "💾 Can be opened in Excel or other tools\n"
-            "📊 Includes all batch predictions"
-        )
+        self.export_btn.setToolTip("Save predictions to CSV file")
         self.export_btn.clicked.connect(self._export_predictions)
         self.export_btn.setEnabled(False)
         results_layout.addWidget(self.export_btn)
         
         results_group.setLayout(results_layout)
-        layout.addWidget(results_group)
-
-        layout.addStretch(1)
+        right_column.addWidget(results_group)
+        
+        # Add columns to main content
+        main_content.addLayout(left_column, stretch=1)
+        main_content.addLayout(right_column, stretch=2)
+        
+        layout.addLayout(main_content)
+        layout.addStretch()
         
         scroll.setWidget(content)
         

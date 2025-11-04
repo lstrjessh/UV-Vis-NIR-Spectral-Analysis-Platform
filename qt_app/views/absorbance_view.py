@@ -32,32 +32,37 @@ class AbsorbanceView(QWidget):
         
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(100, 20, 100, 20)
-        layout.setSpacing(18)
+        layout.setContentsMargins(60, 20, 60, 20)
+        layout.setSpacing(20)
 
         # Title
-        title = QLabel("Calculate Absorbance")
-        title_font = QFont()
-        title_font.setPointSize(24)
-        title_font.setBold(True)
-        title.setFont(title_font)
+        title = QLabel("📊 Calculate Absorbance")
+        title.setProperty("class", "title")
         title.setAlignment(Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(title)
 
         subtitle = QLabel("Upload reference, sample, and optional dark spectra to calculate absorbance")
-        subtitle.setStyleSheet("color: #444444; font-size: 14px; margin-bottom: 8px;")
+        subtitle.setProperty("class", "subtitle")
         layout.addWidget(subtitle)
+        
+        # Main content: Two columns
+        main_content = QHBoxLayout()
+        main_content.setSpacing(20)
+        
+        # Left Column - File Selection & Parameters
+        left_column = QVBoxLayout()
+        left_column.setSpacing(15)
 
         # 1. File Selection
-        file_group = QGroupBox("Step 1: Select Spectral Files")
+        file_group = QGroupBox("📁 Step 1: Load Spectra")
         file_layout = QGridLayout()
         file_layout.setSpacing(12)
         
         # Reference
         ref_label = QLabel("Reference (Blank):")
         ref_label.setStyleSheet("font-weight: 600;")
-        ref_label.setToolTip("Blank/reference spectrum without the sample. This represents the baseline signal from the solvent or cuvette.")
-        self.btn_ref = QPushButton("Choose Files...")
+        ref_label.setToolTip("Blank/reference spectrum without the sample")
+        self.btn_ref = QPushButton("📂 Choose Files...")
         self.btn_ref.setToolTip(
             "Select reference/blank spectral files.\n\n"
             "📋 Supported formats: CSV, TXT, DAT\n"
@@ -66,7 +71,7 @@ class AbsorbanceView(QWidget):
         )
         self.btn_ref.clicked.connect(self._select_ref)
         self.ref_count = QLabel("0 files")
-        self.ref_count.setStyleSheet("color: #555555;")
+        self.ref_count.setStyleSheet("color: #888888; font-size: 10pt;")
         
         file_layout.addWidget(ref_label, 0, 0)
         file_layout.addWidget(self.btn_ref, 0, 1)
@@ -75,8 +80,8 @@ class AbsorbanceView(QWidget):
         # Sample
         sample_label = QLabel("Sample:")
         sample_label.setStyleSheet("font-weight: 600;")
-        sample_label.setToolTip("Sample spectrum containing the analyte of interest. Measured under same conditions as reference.")
-        self.btn_sample = QPushButton("Choose Files...")
+        sample_label.setToolTip("Sample spectrum with analyte")
+        self.btn_sample = QPushButton("📂 Choose Files...")
         self.btn_sample.setToolTip(
             "Select sample spectral files.\n\n"
             "📋 Supported formats: CSV, TXT, DAT\n"
@@ -85,7 +90,7 @@ class AbsorbanceView(QWidget):
         )
         self.btn_sample.clicked.connect(self._select_sample)
         self.sample_count = QLabel("0 files")
-        self.sample_count.setStyleSheet("color: #555555;")
+        self.sample_count.setStyleSheet("color: #888888; font-size: 10pt;")
         
         file_layout.addWidget(sample_label, 1, 0)
         file_layout.addWidget(self.btn_sample, 1, 1)
@@ -94,8 +99,8 @@ class AbsorbanceView(QWidget):
         # Dark (optional)
         dark_label = QLabel("Dark (Optional):")
         dark_label.setStyleSheet("font-weight: 600;")
-        dark_label.setToolTip("Dark spectrum captures detector noise without light. Used for dark correction to remove systematic noise.")
-        self.btn_dark = QPushButton("Choose Files...")
+        dark_label.setToolTip("Dark spectrum for noise correction")
+        self.btn_dark = QPushButton("📂 Choose Files...")
         self.btn_dark.setToolTip(
             "Select dark/noise spectral files (optional).\n\n"
             "⚫ Dark correction formula: A = log₁₀((I₀-Dark)/(I-Dark))\n"
@@ -104,7 +109,7 @@ class AbsorbanceView(QWidget):
         )
         self.btn_dark.clicked.connect(self._select_dark)
         self.dark_count = QLabel("0 files")
-        self.dark_count.setStyleSheet("color: #555555;")
+        self.dark_count.setStyleSheet("color: #888888; font-size: 10pt;")
         
         file_layout.addWidget(dark_label, 2, 0)
         file_layout.addWidget(self.btn_dark, 2, 1)
@@ -112,45 +117,28 @@ class AbsorbanceView(QWidget):
         
         file_layout.setColumnStretch(1, 1)
         file_group.setLayout(file_layout)
-        layout.addWidget(file_group)
+        left_column.addWidget(file_group)
 
-        # 2. Preview
-        preview_group = QGroupBox("Step 2: Spectrum Preview")
-        preview_layout = QHBoxLayout()
-        preview_layout.setSpacing(16)
-        
-        self.prev_ref = FigureCanvas(Figure(figsize=(4, 3), facecolor='none'))
-        self.prev_sample = FigureCanvas(Figure(figsize=(4, 3), facecolor='none'))
-        self.prev_dark = FigureCanvas(Figure(figsize=(4, 3), facecolor='none'))
-        
-        for canvas in [self.prev_ref, self.prev_sample, self.prev_dark]:
-            canvas.setMinimumHeight(200)
-            preview_layout.addWidget(canvas)
-        
-        preview_group.setLayout(preview_layout)
-        layout.addWidget(preview_group)
-
-        # 3. Analysis Controls
-        controls_group = QGroupBox("Step 3: Analysis Parameters")
+        # 2. Analysis Controls (moved up for better workflow)
+        controls_group = QGroupBox("⚙️ Step 2: Processing Options")
         controls_layout = QGridLayout()
         controls_layout.setSpacing(12)
         
         # Smoothing
-        self.cb_smooth = QCheckBox("Apply Smoothing")
+        self.cb_smooth = QCheckBox("Apply Savitzky-Golay Smoothing")
         self.cb_smooth.setToolTip(
             "Apply Savitzky-Golay smoothing filter.\n\n"
             "📊 Reduces noise while preserving spectral features\n"
             "🔬 Uses polynomial fitting within a moving window\n"
             "⚠️ Too much smoothing can remove important features"
         )
-        controls_layout.addWidget(self.cb_smooth, 0, 0, 1, 2)
+        controls_layout.addWidget(self.cb_smooth, 0, 0, 1, 4)
         
-        window_label = QLabel("Window Size:")
+        window_label = QLabel("Window:")
         window_label.setToolTip(
             "Window size for Savitzky-Golay smoothing.\n\n"
             "📏 Must be odd and > polynomial order\n"
             "⬆️ Larger windows = more smoothing\n"
-            "📉 Typical range: 5-15 for spectral data\n"
             "💡 Recommended: 11"
         )
         controls_layout.addWidget(window_label, 1, 0)
@@ -158,94 +146,99 @@ class AbsorbanceView(QWidget):
         self.spin_window.setRange(3, 101)
         self.spin_window.setSingleStep(2)
         self.spin_window.setValue(11)
-        self.spin_window.setToolTip("Window size for smoothing filter (must be odd)")
+        self.spin_window.setToolTip("Window size (must be odd)")
         controls_layout.addWidget(self.spin_window, 1, 1)
         
-        poly_label = QLabel("Polynomial Order:")
-        poly_label.setToolTip(
-            "Polynomial order for Savitzky-Golay smoothing.\n\n"
-            "📐 Higher order = preserves more features\n"
-            "⚠️ Must be less than window size\n"
-            "📉 Order 2-3 works well for most spectra\n"
-            "💡 Recommended: 2"
-        )
-        controls_layout.addWidget(poly_label, 2, 0)
+        poly_label = QLabel("Poly Order:")
+        poly_label.setToolTip("Polynomial order (typically 2-3)")
+        controls_layout.addWidget(poly_label, 1, 2)
         self.spin_poly = QSpinBox()
         self.spin_poly.setRange(1, 9)
         self.spin_poly.setValue(2)
-        self.spin_poly.setToolTip("Polynomial order (typically 2-3 for spectral data)")
-        controls_layout.addWidget(self.spin_poly, 2, 1)
+        controls_layout.addWidget(self.spin_poly, 1, 3)
         
-        # Peak detection
-        peak_label = QLabel("Peak Detection:")
+        # Peak detection header
+        peak_label = QLabel("🎯 Peak Detection:")
         peak_label.setStyleSheet("font-weight: 600; margin-top: 8px;")
-        peak_label.setToolTip(
-            "Automatic peak detection parameters.\n\n"
-            "🎯 Identifies absorption maxima in the spectrum\n"
-            "📊 Uses scipy.signal.find_peaks algorithm\n"
-            "⚙️ Adjust parameters to control sensitivity"
-        )
-        controls_layout.addWidget(peak_label, 3, 0, 1, 2)
+        controls_layout.addWidget(peak_label, 2, 0, 1, 4)
         
         height_label = QLabel("Min Height:")
-        height_label.setToolTip(
-            "Minimum absorbance height for peak detection.\n\n"
-            "📏 Peaks below this threshold are ignored\n"
-            "⬆️ Higher = fewer, stronger peaks only\n"
-            "⬇️ Lower = detects weaker peaks\n"
-            "💡 Typical: 0.05-0.2 for absorbance data"
-        )
-        controls_layout.addWidget(height_label, 4, 0)
+        controls_layout.addWidget(height_label, 3, 0)
         self.spin_peak_height = QDoubleSpinBox()
         self.spin_peak_height.setRange(0.0, 10.0)
         self.spin_peak_height.setSingleStep(0.01)
         self.spin_peak_height.setValue(0.1)
-        self.spin_peak_height.setToolTip("Minimum peak height (absorbance units)")
-        controls_layout.addWidget(self.spin_peak_height, 4, 1)
+        self.spin_peak_height.setToolTip("Minimum peak height")
+        controls_layout.addWidget(self.spin_peak_height, 3, 1)
         
-        distance_label = QLabel("Min Distance (nm):")
-        distance_label.setToolTip(
-            "Minimum wavelength separation between peaks.\n\n"
-            "📏 Prevents detecting multiple peaks too close together\n"
-            "⬆️ Higher = fewer peaks, more separated\n"
-            "⬇️ Lower = can detect closely spaced peaks\n"
-            "💡 Typical: 10-20 nm for UV-Vis spectra"
-        )
-        controls_layout.addWidget(distance_label, 5, 0)
+        distance_label = QLabel("Min Distance:")
+        controls_layout.addWidget(distance_label, 3, 2)
         self.spin_peak_distance = QDoubleSpinBox()
         self.spin_peak_distance.setRange(0.1, 1000.0)
         self.spin_peak_distance.setSingleStep(0.5)
         self.spin_peak_distance.setValue(15.0)
-        self.spin_peak_distance.setToolTip("Minimum distance between peaks in nanometers")
-        controls_layout.addWidget(self.spin_peak_distance, 5, 1)
+        self.spin_peak_distance.setSuffix(" nm")
+        self.spin_peak_distance.setToolTip("Min wavelength separation")
+        controls_layout.addWidget(self.spin_peak_distance, 3, 3)
         
         prom_label = QLabel("Min Prominence:")
-        prom_label.setToolTip(
-            "Minimum peak prominence (relative height).\n\n"
-            "📏 How much a peak stands out from surroundings\n"
-            "⬆️ Higher = only prominent, sharp peaks\n"
-            "⬇️ Lower = detects subtle shoulders and bumps\n"
-            "💡 Typical: 0.01-0.1 for absorbance data"
-        )
-        controls_layout.addWidget(prom_label, 6, 0)
+        controls_layout.addWidget(prom_label, 4, 0)
         self.spin_peak_prom = QDoubleSpinBox()
         self.spin_peak_prom.setRange(0.0, 10.0)
         self.spin_peak_prom.setSingleStep(0.01)
         self.spin_peak_prom.setValue(0.05)
-        self.spin_peak_prom.setToolTip("Minimum peak prominence (absorbance units)")
-        controls_layout.addWidget(self.spin_peak_prom, 6, 1)
+        self.spin_peak_prom.setToolTip("Peak prominence")
+        controls_layout.addWidget(self.spin_peak_prom, 4, 1, 1, 3)
         
         controls_layout.setColumnStretch(1, 1)
+        controls_layout.setColumnStretch(3, 1)
         controls_group.setLayout(controls_layout)
-        layout.addWidget(controls_group)
-
-        # 4. Results
-        results_group = QGroupBox("Step 4: Absorbance Results")
+        left_column.addWidget(controls_group)
+        
+        # Compute button
+        self.run_btn = QPushButton("🔬 Compute Absorbance")
+        self.run_btn.setMinimumHeight(44)
+        self.run_btn.setToolTip("Calculate absorbance spectrum from loaded files")
+        self.run_btn.clicked.connect(self._compute)
+        left_column.addWidget(self.run_btn)
+        
+        left_column.addStretch()
+        
+        # Right Column - Preview & Results
+        right_column = QVBoxLayout()
+        right_column.setSpacing(15)
+        
+        # Preview (compact, stacked)
+        preview_group = QGroupBox("📊 Loaded Spectra Preview")
+        preview_layout = QVBoxLayout()
+        preview_layout.setSpacing(10)
+        
+        # Create smaller preview canvases
+        self.prev_ref = FigureCanvas(Figure(figsize=(6, 2), facecolor='none'))
+        self.prev_sample = FigureCanvas(Figure(figsize=(6, 2), facecolor='none'))
+        self.prev_dark = FigureCanvas(Figure(figsize=(6, 2), facecolor='none'))
+        
+        for canvas, label_text in zip(
+            [self.prev_ref, self.prev_sample, self.prev_dark],
+            ["Reference:", "Sample:", "Dark:"]
+        ):
+            canvas.setMinimumHeight(120)
+            canvas.setMaximumHeight(150)
+            label = QLabel(label_text)
+            label.setStyleSheet("font-weight: 600; font-size: 10pt;")
+            preview_layout.addWidget(label)
+            preview_layout.addWidget(canvas)
+        
+        preview_group.setLayout(preview_layout)
+        right_column.addWidget(preview_group)
+        
+        # Results
+        results_group = QGroupBox("📈 Absorbance Spectrum")
         results_layout = QVBoxLayout()
         results_layout.setSpacing(12)
         
-        # Main plot with proper sizing
-        self.figure = Figure(figsize=(10, 5), facecolor='none')
+        # Main plot
+        self.figure = Figure(figsize=(8, 5), facecolor='none')
         self.canvas = FigureCanvas(self.figure)
         self.canvas.setMinimumHeight(400)
         results_layout.addWidget(self.canvas)
@@ -254,44 +247,30 @@ class AbsorbanceView(QWidget):
         button_layout = QHBoxLayout()
         button_layout.setSpacing(12)
         
-        self.run_btn = QPushButton("🔬 Compute Absorbance")
-        self.run_btn.setToolTip(
-            "Calculate absorbance spectrum from loaded files.\n\n"
-            "📐 Formula: A = log₁₀(I₀/I)\n"
-            "  where I₀ = reference, I = sample\n\n"
-            "⚫ With dark: A = log₁₀((I₀-Dark)/(I-Dark))\n\n"
-            "🔬 Automatically applies smoothing and peak detection"
-        )
-        self.run_btn.setMinimumHeight(44)
-        self.run_btn.clicked.connect(self._compute)
-        button_layout.addWidget(self.run_btn)
-        
         self.export_btn = QPushButton("💾 Export CSV")
-        self.export_btn.setToolTip(
-            "Export calculated absorbance data to CSV file.\n\n"
-            "📋 Format: wavelength (nm), absorbance (AU)\n"
-            "💾 Can be imported into other analysis tools\n"
-            "📊 Compatible with Excel, Origin, etc."
-        )
+        self.export_btn.setToolTip("Export absorbance data to CSV file")
         self.export_btn.setEnabled(False)
         self.export_btn.clicked.connect(self._export_csv)
         button_layout.addWidget(self.export_btn)
+        
+        button_layout.addStretch()
         
         results_layout.addLayout(button_layout)
         
         # Status
         self.status = QLabel("Ready to process spectra")
         self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status.setStyleSheet("""
-            padding: 12px;
-            border-radius: 6px;
-            background: palette(midlight);
-            font-size: 13px;
-        """)
+        self.status.setProperty("class", "info-box")
         results_layout.addWidget(self.status)
         
         results_group.setLayout(results_layout)
-        layout.addWidget(results_group)
+        right_column.addWidget(results_group)
+        
+        # Add columns to main content
+        main_content.addLayout(left_column, stretch=1)
+        main_content.addLayout(right_column, stretch=2)
+        
+        layout.addLayout(main_content)
 
         layout.addStretch()
         scroll.setWidget(content)
@@ -358,8 +337,6 @@ class AbsorbanceView(QWidget):
             ax.spines['right'].set_visible(False)
             ax.spines['bottom'].set_color(text_color)
             ax.spines['left'].set_color(text_color)
-            ax.set_title(f"{label} Preview", fontsize=12, fontweight='bold', 
-                        color=text_color, pad=10)
             fig.tight_layout()
             canvas.draw_idle()
             return
