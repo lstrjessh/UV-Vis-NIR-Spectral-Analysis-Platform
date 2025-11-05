@@ -157,11 +157,43 @@ def main() -> None:
     # Setup adaptive theme
     setup_theme(app)
     
-    # Load modern stylesheet
-    style_path = Path(__file__).parent / 'resources' / 'modern_style.qss'
+    # Load modern stylesheet - handle both dev and PyInstaller bundled paths
+    def get_resource_path(relative_path):
+        """Get absolute path to resource, works for dev and PyInstaller bundle"""
+        try:
+            # PyInstaller creates a temp folder and stores path in _MEIPASS
+            base_path = Path(sys._MEIPASS)
+            print(f"Running as bundled app. Base path: {base_path}")
+        except Exception:
+            # Development mode - relative to this file
+            base_path = Path(__file__).parent
+            print(f"Running in development mode. Base path: {base_path}")
+        
+        resource_path = base_path / relative_path
+        print(f"Looking for resource at: {resource_path}")
+        return resource_path
+    
+    # Try both possible paths
+    style_path = get_resource_path('resources/modern_style.qss')
+    if not style_path.exists():
+        print(f"Style not found at {style_path}, trying qt_app/resources/")
+        style_path = get_resource_path('qt_app/resources/modern_style.qss')
+    
     if style_path.exists():
-        with open(style_path, 'r') as f:
+        print(f"Loading stylesheet from: {style_path}")
+        with open(style_path, 'r', encoding='utf-8') as f:
             app.setStyleSheet(f.read())
+    else:
+        print(f"Warning: Stylesheet not found at {style_path}")
+        # List what's actually in the directory
+        try:
+            parent_dir = style_path.parent
+            if parent_dir.exists():
+                print(f"Contents of {parent_dir}:")
+                for item in parent_dir.iterdir():
+                    print(f"  - {item.name}")
+        except Exception as e:
+            print(f"Could not list directory: {e}")
     
     window = MainWindow()
     window.show()

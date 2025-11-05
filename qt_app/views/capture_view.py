@@ -220,7 +220,7 @@ class CaptureView(QWidget):
         title.setProperty("class", "title")
         layout.addWidget(title)
         
-        subtitle = QLabel("Real-time spectral analysis from camera-based spectrometer with Theremino-style calibration")
+        subtitle = QLabel("Real-time spectral analysis from camera-based spectrometer with precise wavelength calibration and built-in irradiance and dark current correction")
         subtitle.setProperty("class", "subtitle")
         layout.addWidget(subtitle)
         
