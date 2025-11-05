@@ -36,12 +36,15 @@ class CaptureView(QWidget):
         self.intensity = np.zeros(800)
         self.wavelengthData = []
         self.hold_peaks = False
-        self.measure_mode = False
-        self.calibration_mode = False
         self.calibration_points = []  # [(pixel, wavelength), ...]
         self.click_positions = []  # Pixel positions from plot clicks
         
-        # Theremino-style trim/calibration points
+        # Polynomial calibration system (improved over Theremino's 2-point linear)
+        self.calib_peaks = []  # List of calibration peaks: [(pixel_pos, known_wavelength), ...]
+        self.calib_polynomial_degree = 2  # Default to quadratic fit
+        self.calib_polynomial_coeffs = None  # Stores polynomial coefficients after fit
+        
+        # Theremino-style trim/calibration points (kept for backward compatibility)
         self.trim_point1 = 436.0  # First calibration wavelength (nm)
         self.trim_point2 = 546.0  # Second calibration wavelength (nm)
         self.trim_mode = False    # When true, can drag spectrum to align
@@ -50,18 +53,16 @@ class CaptureView(QWidget):
         self.initial_nm_max = None
         
         # Camera settings
-        self.frame_width = 1280  # Default to 720p
-        self.frame_height = 720
+        self.frame_width = 1920  # Default to 1080p
+        self.frame_height = 1080
         self.camera_exposure = -1  # Auto exposure
-        self.camera_brightness = 0
-        self.camera_contrast = 1.0
         self.camera_fps = 30
         
         # ROI settings for spectral line extraction (absolute position on frame)
         self.roi_x_start = 0    # X position of left edge of ROI
-        self.roi_x_end = 1280   # X position of right edge of ROI
-        self.roi_y_start = 320  # Y position of top of ROI (default: center)
-        self.roi_height = 80    # Height of ROI
+        self.roi_x_end = 1120   # X position of right edge of ROI
+        self.roi_y_start = 544  # Y position of top of ROI (default: center)
+        self.roi_height = 30    # Height of ROI
         
         # Processing settings
         self.savpoly = 7
@@ -72,33 +73,30 @@ class CaptureView(QWidget):
         self.filter_strength = 30  # 0-100, noise filtering
         self.rising_speed = 50     # 0-100, how fast to track increases
         self.falling_speed = 10    # 0-100, how fast to track decreases
-        self.flip_horizontal = False  # Flip camera image horizontally
+        self.flip_horizontal = True  # Flip camera image horizontally by default
         
         # Temporal filtering state
         self.spec_array = None  # Smoothed intensity with rising/falling speed
         self.spec_filtered = None  # Further filtered with noise filter
+        
+        # Irradiance correction (Theremino-style spectral response calibration)
+        self.irradiance_correction_enabled = True  # Always enabled
+        # Theremino uses intensity scale 0-800 with noise=2.2
+        # We use scale 0-300, so scale the noise: 2.2 * (300/800) = 0.825
+        self.average_bg_noise = 0.825  # Scaled from Theremino's 2.2 for our 0-300 range
+        self.uv380_coeff = 2.568  # UV region correction coefficient
+        self.ir780_coeff = 1.41   # IR region correction coefficient
+        self.init_irradiance_coefficients()  # Initialize correction lookup table
         
         # Performance optimization
         self.frame_skip = 0  # Skip frames for performance
         self.frame_counter = 0
         self.update_interval = 100  # ms between graph updates (was 50)
         
-        # Initialize calibration
-        cal_file = Path(__file__).parent.parent / 'caldata.txt'
-        caldata = readcal(self.frame_width, str(cal_file))
-        self.wavelengthData = caldata[0]
-        self.cal_msg1 = caldata[1]
-        self.cal_msg2 = caldata[2]
-        self.cal_msg3 = caldata[3]
-        
-        # Initialize wavelength range from calibration data
-        if len(self.wavelengthData) > 0:
-            self.nm_min = float(self.wavelengthData[0])
-            self.nm_max = float(self.wavelengthData[-1])
-        else:
-            # Default range if no calibration
-            self.nm_min = 380.0
-            self.nm_max = 780.0
+        # Initialize calibration to 300-850 nm linear scale
+        self.nm_min = 300.0
+        self.nm_max = 850.0
+        self.wavelengthData = np.linspace(self.nm_min, self.nm_max, self.frame_width).tolist()
         
         # Generate graticule
         self.graticule_data = generateGraticule(self.wavelengthData)
@@ -108,8 +106,103 @@ class CaptureView(QWidget):
         # Initialize UI
         self.init_ui()
         
+        # Try to load saved calibration
+        self.load_calibration_from_file()
+        
         # Initialize camera thread
         self.camera_thread = None
+    
+    def init_irradiance_coefficients(self):
+        """
+        Initialize irradiance correction coefficients from Theremino Spectrometer.
+        These correct for spectral sensitivity variations of the camera sensor.
+        Covers 380-780 nm range with 401 data points.
+        """
+        # Theremino's standard wavelength irradiance correction coefficients (380-780 nm, 1nm steps)
+        irradiance_coeffs = [
+            2.568, 2.568, 2.568, 2.568, 2.568, 2.568, 2.562, 2.532, 2.504, 2.364, 2.282, 2.258, 2.19, 2.072, 1.94, 1.836, 1.753, 1.642, 1.555, 1.49,
+            1.423, 1.37, 1.3, 1.243, 1.214, 1.18, 1.155, 1.155, 1.16, 1.165, 1.175, 1.188, 1.204, 1.221, 1.25, 1.263, 1.258, 1.277, 1.291, 1.32,
+            1.348, 1.376, 1.381, 1.376, 1.359, 1.344, 1.326, 1.313, 1.292, 1.273, 1.254, 1.24, 1.218, 1.204, 1.186, 1.173, 1.147, 1.117, 1.089, 1.064,
+            1.049, 1.04, 1.038, 1.036, 1.036, 1.036, 1.036, 1.038, 1.041, 1.046, 1.049, 1.051, 1.052, 1.055, 1.057, 1.057, 1.056, 1.054, 1.053, 1.049,
+            1.043, 1.035, 1.028, 1.02, 1.01, 0.996, 0.979, 0.963, 0.945, 0.927, 0.908, 0.893, 0.88, 0.868, 0.857, 0.846, 0.838, 0.828, 0.82, 0.813,
+            0.81, 0.808, 0.808, 0.809, 0.812, 0.814, 0.816, 0.819, 0.822, 0.827, 0.832, 0.84, 0.85, 0.859, 0.868, 0.874, 0.88, 0.886, 0.891, 0.896,
+            0.9, 0.904, 0.908, 0.91, 0.909, 0.908, 0.906, 0.903, 0.899, 0.895, 0.891, 0.887, 0.883, 0.878, 0.873, 0.867, 0.86, 0.852, 0.845, 0.839,
+            0.833, 0.827, 0.822, 0.817, 0.813, 0.808, 0.805, 0.803, 0.802, 0.8, 0.798, 0.796, 0.795, 0.794, 0.794, 0.794, 0.793, 0.793, 0.794, 0.789,
+            0.786, 0.784, 0.788, 0.793, 0.797, 0.8, 0.804, 0.808, 0.812, 0.815, 0.818, 0.821, 0.824, 0.825, 0.827, 0.827, 0.827, 0.826, 0.824, 0.823,
+            0.822, 0.822, 0.821, 0.82, 0.818, 0.817, 0.815, 0.813, 0.809, 0.806, 0.803, 0.802, 0.802, 0.801, 0.8, 0.798, 0.796, 0.794, 0.792, 0.791,
+            0.791, 0.792, 0.795, 0.798, 0.802, 0.806, 0.81, 0.814, 0.82, 0.825, 0.832, 0.839, 0.845, 0.852, 0.858, 0.864, 0.87, 0.877, 0.885, 0.895,
+            0.905, 0.915, 0.924, 0.935, 0.943, 0.952, 0.958, 0.967, 0.975, 0.984, 0.993, 1.001, 1.012, 1.02, 1.028, 1.031, 1.036, 1.039, 1.042, 1.046,
+            1.05, 1.055, 1.061, 1.065, 1.069, 1.071, 1.071, 1.069, 1.066, 1.064, 1.062, 1.062, 1.063, 1.064, 1.064, 1.062, 1.058, 1.053, 1.048, 1.044,
+            1.043, 1.044, 1.045, 1.044, 1.041, 1.036, 1.029, 1.023, 1.018, 1.015, 1.01, 1.007, 1.005, 1.003, 1, 0.995, 0.992, 0.991, 0.99, 0.987,
+            0.985, 0.984, 0.983, 0.98, 0.978, 0.979, 0.982, 0.985, 0.991, 0.996, 1.002, 1.003, 1.003, 1.001, 1.003, 1.005, 1.008, 1.011, 1.016, 1.018,
+            1.017, 1.016, 1.018, 1.026, 1.032, 1.039, 1.045, 1.053, 1.057, 1.057, 1.06, 1.064, 1.07, 1.073, 1.076, 1.081, 1.086, 1.087, 1.089, 1.091,
+            1.093, 1.095, 1.098, 1.102, 1.104, 1.108, 1.111, 1.115, 1.117, 1.118, 1.122, 1.126, 1.128, 1.131, 1.132, 1.134, 1.138, 1.14, 1.142, 1.144,
+            1.145, 1.146, 1.148, 1.148, 1.145, 1.147, 1.141, 1.138, 1.14, 1.14, 1.14, 1.143, 1.145, 1.149, 1.15, 1.152, 1.156, 1.156, 1.157, 1.161,
+            1.165, 1.17, 1.172, 1.174, 1.176, 1.179, 1.183, 1.186, 1.189, 1.192, 1.204, 1.2, 1.205, 1.21, 1.215, 1.219, 1.225, 1.23, 1.244, 1.241,
+            1.246, 1.252, 1.257, 1.264, 1.271, 1.278, 1.283, 1.299, 1.299, 1.309, 1.314, 1.322, 1.332, 1.34, 1.347, 1.367, 1.368, 1.376, 1.387, 1.398, 1.41
+        ]
+        
+        # Create dictionary mapping wavelength (380-780 nm) to correction coefficient
+        self.irradiance_dict = {}
+        for i, coeff in enumerate(irradiance_coeffs):
+            wavelength = 380 + i  # Start at 380 nm, increment by 1 nm
+            self.irradiance_dict[wavelength] = coeff
+        
+        print(f"Irradiance correction initialized: {len(self.irradiance_dict)} wavelength points (380-780 nm)")
+    
+    def apply_irradiance_correction(self, intensity_data):
+        """
+        Apply Theremino-style irradiance correction to intensity data.
+        Corrects for spectral sensitivity variations of the camera sensor.
+        
+        Args:
+            intensity_data: numpy array of intensity values for each pixel
+            
+        Returns:
+            numpy array of corrected intensity values
+        """
+        if not self.irradiance_correction_enabled:
+            return intensity_data
+        
+        corrected = np.zeros_like(intensity_data)
+        max_value = 300.0  # Maximum intensity value for clamping
+        
+        for i in range(len(intensity_data)):
+            # Get wavelength for this pixel position
+            if i < len(self.wavelengthData):
+                wavelength = self.wavelengthData[i]
+            else:
+                # Fallback: no correction
+                corrected[i] = intensity_data[i]
+                continue
+            
+            # Round wavelength to nearest integer for lookup
+            wl_int = int(round(wavelength))
+            
+            # Apply correction based on wavelength region
+            if wl_int < 380:
+                # UV region: use fixed coefficient
+                corrected_value = (intensity_data[i] - self.average_bg_noise) * self.uv380_coeff
+                corrected_value = max(0, corrected_value)  # No negative values
+                corrected[i] = min(corrected_value, max_value)
+                
+            elif wl_int <= 780:
+                # Visible region: use lookup table
+                if wl_int in self.irradiance_dict:
+                    coeff = self.irradiance_dict[wl_int]
+                    corrected_value = (intensity_data[i] - self.average_bg_noise) * coeff
+                    corrected_value = max(0, corrected_value)
+                    corrected[i] = min(corrected_value, max_value)
+                else:
+                    # Wavelength not in table, use nearest or no correction
+                    corrected[i] = intensity_data[i]
+                    
+            else:
+                # IR region: use fixed coefficient
+                corrected_value = intensity_data[i] * self.ir780_coeff
+                corrected[i] = min(corrected_value, max_value)
+        
+        return corrected
         
     def init_ui(self):
         """Initialize the user interface."""
@@ -132,7 +225,7 @@ class CaptureView(QWidget):
         layout.addWidget(subtitle)
         
         # Status bar (moved to top for better visibility)
-        self.status_label = QLabel(f"✓ Ready | {self.cal_msg1}")
+        self.status_label = QLabel(f"✓ Ready | Default calibration: 300-1100 nm")
         self.status_label.setProperty("class", "status")
         layout.addWidget(self.status_label)
         
@@ -184,9 +277,9 @@ class CaptureView(QWidget):
         spectrum_group = QGroupBox("📈 Live Spectrum Analysis")
         spectrum_layout = QVBoxLayout()
         
-        self.figure = Figure(figsize=(10, 4))
+        self.figure = Figure(figsize=(10, 6))
         self.canvas = FigureCanvas(self.figure)
-        self.canvas.setMinimumHeight(350)
+        self.canvas.setMinimumHeight(500)
         self.ax = self.figure.add_subplot(111)
         self.spec_ax = self.ax  # Alias for trim mode compatibility
         self.spec_canvas = self.canvas  # Alias for trim mode compatibility
@@ -240,8 +333,8 @@ class CaptureView(QWidget):
         layout.addWidget(QLabel("Camera Device:"), 1, 0)
         self.device_spin = QSpinBox()
         self.device_spin.setRange(0, 10)
-        self.device_spin.setValue(0)
-        self.device_spin.setToolTip("Camera device ID (0 for default)")
+        self.device_spin.setValue(1)
+        self.device_spin.setToolTip("Camera device ID (1 for default)")
         layout.addWidget(self.device_spin, 1, 1)
         
         group.setLayout(layout)
@@ -261,7 +354,7 @@ class CaptureView(QWidget):
             "1280 × 720",
             "1920 × 1080"
         ])
-        self.resolution_combo.setCurrentIndex(0)  # Default to 640x480
+        self.resolution_combo.setCurrentIndex(2)  # Default to 1920x1080
         self.resolution_combo.setToolTip("Camera resolution - lower is faster")
         layout.addWidget(self.resolution_combo, 0, 1)
         
@@ -291,40 +384,14 @@ class CaptureView(QWidget):
         exposure_layout.addWidget(self.exposure_label)
         layout.addLayout(exposure_layout, 2, 1)
         
-        # Brightness
-        layout.addWidget(QLabel("Brightness:"), 3, 0)
-        brightness_layout = QHBoxLayout()
-        self.brightness_slider = QSlider(Qt.Orientation.Horizontal)
-        self.brightness_slider.setRange(-100, 100)
-        self.brightness_slider.setValue(0)
-        self.brightness_slider.setToolTip("Camera brightness adjustment")
-        self.brightness_slider.valueChanged.connect(self.on_brightness_changed)
-        self.brightness_label = QLabel("0")
-        brightness_layout.addWidget(self.brightness_slider)
-        brightness_layout.addWidget(self.brightness_label)
-        layout.addLayout(brightness_layout, 3, 1)
-        
-        # Contrast
-        layout.addWidget(QLabel("Contrast:"), 4, 0)
-        contrast_layout = QHBoxLayout()
-        self.contrast_slider = QSlider(Qt.Orientation.Horizontal)
-        self.contrast_slider.setRange(0, 200)
-        self.contrast_slider.setValue(100)
-        self.contrast_slider.setToolTip("Camera contrast adjustment (100 = default)")
-        self.contrast_slider.valueChanged.connect(self.on_contrast_changed)
-        self.contrast_label = QLabel("1.0")
-        contrast_layout.addWidget(self.contrast_slider)
-        contrast_layout.addWidget(self.contrast_label)
-        layout.addLayout(contrast_layout, 4, 1)
-        
         # --- ROI Settings ---
         roi_separator = QLabel("═══ Region of Interest (ROI) ═══")
         roi_separator.setStyleSheet("color: #0066cc; font-weight: bold; margin-top: 10px;")
         roi_separator.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(roi_separator, 5, 0, 1, 2)
+        layout.addWidget(roi_separator, 3, 0, 1, 2)
         
         # ROI X Start Position
-        layout.addWidget(QLabel("ROI X Start:"), 6, 0)
+        layout.addWidget(QLabel("ROI X Start:"), 4, 0)
         roi_x_start_layout = QHBoxLayout()
         self.roi_x_start_slider = QSlider(Qt.Orientation.Horizontal)
         self.roi_x_start_slider.setRange(0, 1920)
@@ -334,49 +401,49 @@ class CaptureView(QWidget):
         self.roi_x_start_label = QLabel("0 px")
         roi_x_start_layout.addWidget(self.roi_x_start_slider)
         roi_x_start_layout.addWidget(self.roi_x_start_label)
-        layout.addLayout(roi_x_start_layout, 6, 1)
+        layout.addLayout(roi_x_start_layout, 4, 1)
         
         # ROI X End Position
-        layout.addWidget(QLabel("ROI X End:"), 7, 0)
+        layout.addWidget(QLabel("ROI X End:"), 5, 0)
         roi_x_end_layout = QHBoxLayout()
         self.roi_x_end_slider = QSlider(Qt.Orientation.Horizontal)
         self.roi_x_end_slider.setRange(0, 1920)
-        self.roi_x_end_slider.setValue(1280)
+        self.roi_x_end_slider.setValue(1100)  # Default to 1100px
         self.roi_x_end_slider.setToolTip("X coordinate of right edge of ROI")
         self.roi_x_end_slider.valueChanged.connect(self.on_roi_x_end_changed)
-        self.roi_x_end_label = QLabel("1280 px")
+        self.roi_x_end_label = QLabel("1100 px")
         roi_x_end_layout.addWidget(self.roi_x_end_slider)
         roi_x_end_layout.addWidget(self.roi_x_end_label)
-        layout.addLayout(roi_x_end_layout, 7, 1)
+        layout.addLayout(roi_x_end_layout, 5, 1)
         
         # ROI Y Position (absolute)
-        layout.addWidget(QLabel("ROI Y Start:"), 8, 0)
+        layout.addWidget(QLabel("ROI Y Start:"), 6, 0)
         roi_y_layout = QHBoxLayout()
         self.roi_y_slider = QSlider(Qt.Orientation.Horizontal)
         self.roi_y_slider.setRange(0, 1080)  # Max common resolution height
-        self.roi_y_slider.setValue(320)
+        self.roi_y_slider.setValue(544)  # Default to 544px
         self.roi_y_slider.setToolTip("Y coordinate of top of ROI (pixels from top of frame)")
         self.roi_y_slider.valueChanged.connect(self.on_roi_y_changed)
-        self.roi_y_label = QLabel("320 px")
+        self.roi_y_label = QLabel("544 px")
         roi_y_layout.addWidget(self.roi_y_slider)
         roi_y_layout.addWidget(self.roi_y_label)
-        layout.addLayout(roi_y_layout, 8, 1)
+        layout.addLayout(roi_y_layout, 6, 1)
         
         # ROI Height
-        layout.addWidget(QLabel("ROI Height:"), 9, 0)
+        layout.addWidget(QLabel("ROI Height:"), 7, 0)
         roi_h_layout = QHBoxLayout()
         self.roi_h_slider = QSlider(Qt.Orientation.Horizontal)
         self.roi_h_slider.setRange(10, 300)
-        self.roi_h_slider.setValue(80)
+        self.roi_h_slider.setValue(30)  # Default to 30px
         self.roi_h_slider.setToolTip("Height of spectral line region (pixels)")
         self.roi_h_slider.valueChanged.connect(self.on_roi_h_changed)
-        self.roi_h_label = QLabel("80 px")
+        self.roi_h_label = QLabel("30 px")
         roi_h_layout.addWidget(self.roi_h_slider)
         roi_h_layout.addWidget(self.roi_h_label)
-        layout.addLayout(roi_h_layout, 9, 1)
+        layout.addLayout(roi_h_layout, 7, 1)
         
         # Update interval (performance)
-        layout.addWidget(QLabel("Update Interval:"), 10, 0)
+        layout.addWidget(QLabel("Update Interval:"), 8, 0)
         interval_layout = QHBoxLayout()
         self.interval_spin = QSpinBox()
         self.interval_spin.setRange(33, 500)
@@ -387,14 +454,22 @@ class CaptureView(QWidget):
         self.interval_spin.valueChanged.connect(self.on_interval_changed)
         interval_layout.addWidget(self.interval_spin)
         interval_layout.addWidget(QLabel("(↑ = less lag)"))
-        layout.addLayout(interval_layout, 10, 1)
+        layout.addLayout(interval_layout, 8, 1)
         
         # Apply button
         self.apply_settings_btn = QPushButton("🔄 Apply Resolution/FPS")
         self.apply_settings_btn.setMinimumHeight(35)
         self.apply_settings_btn.setToolTip("Restart camera with new resolution/FPS settings")
         self.apply_settings_btn.clicked.connect(self.apply_camera_settings)
-        layout.addWidget(self.apply_settings_btn, 11, 0, 1, 2)
+        layout.addWidget(self.apply_settings_btn, 9, 0, 1, 2)
+        
+        # Reset camera settings button
+        self.reset_camera_btn = QPushButton("🔄 Reset Camera Settings to Defaults")
+        self.reset_camera_btn.setMinimumHeight(30)
+        self.reset_camera_btn.setStyleSheet("background-color: #ff9800; color: white;")
+        self.reset_camera_btn.setToolTip("Reset all camera settings to default values")
+        self.reset_camera_btn.clicked.connect(self.reset_camera_settings)
+        layout.addWidget(self.reset_camera_btn, 10, 0, 1, 2)
         
         group.setLayout(layout)
         return group
@@ -403,7 +478,7 @@ class CaptureView(QWidget):
         """Create spectrum processing controls - compact version."""
         from PyQt6.QtWidgets import QTabWidget
         
-        group = QGroupBox("⚙️ Processing & Display")
+        group = QGroupBox("⚙️ Spectrum Processing")
         main_layout = QVBoxLayout()
         
         # Tabs for organization
@@ -507,17 +582,49 @@ class CaptureView(QWidget):
         display_layout = QVBoxLayout(display_tab)
         display_layout.setSpacing(10)
         
+        # Wavelength range settings
+        range_group = QGroupBox("Wavelength Display Range")
+        range_layout = QGridLayout()
+        range_layout.setSpacing(10)
+        
+        range_layout.addWidget(QLabel("Min Wavelength:"), 0, 0)
+        nm_min_layout = QHBoxLayout()
+        self.nm_min_spin = QSpinBox()
+        self.nm_min_spin.setRange(200, 1000)
+        self.nm_min_spin.setValue(300)
+        self.nm_min_spin.setSuffix(" nm")
+        self.nm_min_spin.setToolTip("Minimum wavelength to display")
+        self.nm_min_spin.valueChanged.connect(self.on_wavelength_range_changed)
+        nm_min_layout.addWidget(self.nm_min_spin)
+        range_layout.addLayout(nm_min_layout, 0, 1)
+        
+        range_layout.addWidget(QLabel("Max Wavelength:"), 1, 0)
+        nm_max_layout = QHBoxLayout()
+        self.nm_max_spin = QSpinBox()
+        self.nm_max_spin.setRange(300, 1200)
+        self.nm_max_spin.setValue(850)
+        self.nm_max_spin.setSuffix(" nm")
+        self.nm_max_spin.setToolTip("Maximum wavelength to display")
+        self.nm_max_spin.valueChanged.connect(self.on_wavelength_range_changed)
+        nm_max_layout.addWidget(self.nm_max_spin)
+        range_layout.addLayout(nm_max_layout, 1, 1)
+        
+        self.apply_range_btn = QPushButton("✓ Apply Range")
+        self.apply_range_btn.setToolTip("Apply new wavelength range to spectrum")
+        self.apply_range_btn.clicked.connect(self.apply_wavelength_range)
+        range_layout.addWidget(self.apply_range_btn, 2, 0, 1, 2)
+        
+        range_group.setLayout(range_layout)
+        display_layout.addWidget(range_group)
+        
+        # Display options
         self.hold_peaks_cb = QCheckBox("Hold Peak Maxima")
         self.hold_peaks_cb.setToolTip("Hold maximum intensity values")
         self.hold_peaks_cb.stateChanged.connect(self.on_hold_peaks_changed)
         display_layout.addWidget(self.hold_peaks_cb)
         
-        self.measure_cb = QCheckBox("Measure Mode (Click to Read)")
-        self.measure_cb.setToolTip("Click spectrum to measure wavelength")
-        self.measure_cb.stateChanged.connect(self.on_measure_changed)
-        display_layout.addWidget(self.measure_cb)
-        
         self.flip_horizontal_cb = QCheckBox("Flip Camera Horizontally")
+        self.flip_horizontal_cb.setChecked(True)  # Default to flipped
         self.flip_horizontal_cb.setToolTip("Mirror camera image")
         self.flip_horizontal_cb.stateChanged.connect(self.on_flip_changed)
         display_layout.addWidget(self.flip_horizontal_cb)
@@ -541,91 +648,129 @@ class CaptureView(QWidget):
         return group
     
     def create_calibration_section(self):
-        """Create calibration controls."""
-        group = QGroupBox("Wavelength Calibration (Theremino Style)")
+        """Create calibration controls with polynomial fitting support."""
+        group = QGroupBox("Wavelength Calibration - Polynomial Fit (Drag Peaks to Known Lines)")
         layout = QVBoxLayout()
         
         info = QLabel(
-            "📌 Theremino-Style Calibration:\n"
-            "1. Point spectrometer at known source (e.g., fluorescent lamp with Hg peaks)\n"
-            "2. Set two known wavelengths (Trim Points) below\n"
-            "3. Enable 'Trim/Align Mode' and drag spectrum left/right to align peaks\n"
-            "4. Spectrum will automatically adjust wavelength scale as you drag"
+            "📌 Advanced Polynomial Calibration:\n"
+            "1. Point spectrometer at known emission source (e.g., fluorescent lamp, LED)\n"
+            "2. Add calibration points by clicking 'Add Calibration Point' and entering known wavelengths\n"
+            "3. Click 'Apply Calibration' to compute the polynomial fit\n"
+            "4. Polynomial fit automatically adjusts the entire wavelength scale\n"
+            "5. Use 2+ points for linear, 3+ for quadratic, 4+ for cubic calibration"
         )
         info.setProperty("class", "info-box")
         layout.addWidget(info)
         
-        # Trim point inputs
-        trim_layout = QGridLayout()
+        # Calibration mode controls
+        calib_controls = QHBoxLayout()
         
-        # Preset buttons
-        preset_label = QLabel("Presets:")
-        trim_layout.addWidget(preset_label, 0, 0)
+        # Polynomial degree selector
+        calib_controls.addWidget(QLabel("Polynomial Fit Degree:"))
+        self.poly_degree_spin = QSpinBox()
+        self.poly_degree_spin.setRange(1, 5)
+        self.poly_degree_spin.setValue(2)
+        self.poly_degree_spin.setToolTip("Polynomial degree: 1=linear, 2=quadratic, 3=cubic, etc.")
+        self.poly_degree_spin.valueChanged.connect(self.on_poly_degree_changed)
+        calib_controls.addWidget(self.poly_degree_spin)
+        
+        calib_controls.addStretch()
+        layout.addLayout(calib_controls)
+        
+        # Calibration points management
+        points_layout = QVBoxLayout()
+        points_header = QHBoxLayout()
+        
+        points_label = QLabel("Calibration Points:")
+        points_label.setStyleSheet("font-weight: bold; font-size: 10pt;")
+        points_header.addWidget(points_label)
+        
+        self.add_point_btn = QPushButton("➕ Add Point")
+        self.add_point_btn.setToolTip("Add a new calibration point")
+        self.add_point_btn.clicked.connect(self.add_calibration_point)
+        points_header.addWidget(self.add_point_btn)
+        
+        self.clear_points_btn = QPushButton("🗑️ Clear All")
+        self.clear_points_btn.setToolTip("Clear all calibration points and reset to default linear scale")
+        self.clear_points_btn.clicked.connect(self.clear_calibration_points)
+        points_header.addWidget(self.clear_points_btn)
+        
+        self.load_calib_btn = QPushButton("📁 Load Calibration")
+        self.load_calib_btn.setToolTip("Load saved calibration from file")
+        self.load_calib_btn.clicked.connect(self.load_calibration_button_clicked)
+        points_header.addWidget(self.load_calib_btn)
+        
+        self.apply_calib_btn = QPushButton("✓ Apply Calibration")
+        self.apply_calib_btn.setToolTip("Compute and apply polynomial fit to wavelength scale")
+        self.apply_calib_btn.clicked.connect(self.apply_polynomial_calibration)
+        self.apply_calib_btn.setProperty("class", "primary")
+        points_header.addWidget(self.apply_calib_btn)
+        
+        self.save_calib_btn = QPushButton("💾 Save Calibration")
+        self.save_calib_btn.setToolTip("Save current calibration to file and cache")
+        self.save_calib_btn.clicked.connect(self.save_calibration_to_file)
+        self.save_calib_btn.setStyleSheet("background-color: #4CAF50; color: white;")
+        points_header.addWidget(self.save_calib_btn)
+        
+        points_header.addStretch()
+        points_layout.addLayout(points_header)
+        
+        # Table to display calibration points
+        self.calib_table = QTableWidget()
+        self.calib_table.setColumnCount(4)
+        self.calib_table.setHorizontalHeaderLabels(["Pixel Position", "Known Wavelength (nm)", "Current λ (nm)", "Actions"])
+        self.calib_table.horizontalHeader().setStretchLastSection(False)
+        self.calib_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.calib_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.calib_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.calib_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self.calib_table.setColumnWidth(3, 50)  # Set Actions column to 50px width
+        self.calib_table.setMinimumHeight(150)
+        self.calib_table.setMaximumHeight(400)  # Increased from 200 to 400
+        self.calib_table.setToolTip("List of calibration points for polynomial fitting")
+        points_layout.addWidget(self.calib_table)
+        
+        layout.addLayout(points_layout)
+        
+        # Calibration status
+        self.calib_status_label = QLabel("No calibration applied - using default linear scale")
+        self.calib_status_label.setProperty("class", "info-box")
+        self.calib_status_label.setStyleSheet("font-size: 9pt; padding: 8px;")
+        layout.addWidget(self.calib_status_label)
+        
+        # Quick presets for common emission lines
+        presets_layout = QVBoxLayout()
+        presets_label = QLabel("Quick Presets (Common Emission Lines):")
+        presets_label.setStyleSheet("font-weight: bold; font-size: 9pt; margin-top: 10px;")
+        presets_layout.addWidget(presets_label)
         
         preset_buttons = QHBoxLayout()
-        self.preset_436_546_btn = QPushButton("436-546 nm")
-        self.preset_436_546_btn.setToolTip("Mercury: 436nm (blue) and 546nm (green)")
-        self.preset_436_546_btn.clicked.connect(lambda: self.set_trim_preset(436, 546))
-        preset_buttons.addWidget(self.preset_436_546_btn)
         
-        self.preset_436_692_btn = QPushButton("436-692 nm")
-        self.preset_436_692_btn.setToolTip("Mercury 436nm and Ruby 692nm")
-        self.preset_436_692_btn.clicked.connect(lambda: self.set_trim_preset(436, 692))
-        preset_buttons.addWidget(self.preset_436_692_btn)
+        self.preset_hg_btn = QPushButton("Mercury (Hg)")
+        self.preset_hg_btn.setToolTip("Add Mercury emission lines: 404.7, 435.8, 546.1, 577.0, 579.1 nm")
+        self.preset_hg_btn.clicked.connect(lambda: self.load_preset('mercury'))
+        preset_buttons.addWidget(self.preset_hg_btn)
         
-        self.preset_405_546_btn = QPushButton("405-546 nm")
-        self.preset_405_546_btn.setToolTip("Mercury 405nm (violet) and 546nm (green)")
-        self.preset_405_546_btn.clicked.connect(lambda: self.set_trim_preset(405, 546))
-        preset_buttons.addWidget(self.preset_405_546_btn)
+        self.preset_he_btn = QPushButton("Helium (He)")
+        self.preset_he_btn.setToolTip("Add Helium emission lines: 388.9, 447.1, 471.3, 492.2, 501.6, 587.6, 667.8, 706.5 nm")
+        self.preset_he_btn.clicked.connect(lambda: self.load_preset('helium'))
+        preset_buttons.addWidget(self.preset_he_btn)
         
-        trim_layout.addLayout(preset_buttons, 0, 1, 1, 2)
+        self.preset_ne_btn = QPushButton("Neon (Ne)")
+        self.preset_ne_btn.setToolTip("Add Neon emission lines: 540.1, 585.2, 614.3, 638.3, 650.7, 703.2, 724.5 nm")
+        self.preset_ne_btn.clicked.connect(lambda: self.load_preset('neon'))
+        preset_buttons.addWidget(self.preset_ne_btn)
         
-        # Trim Point 1
-        trim_layout.addWidget(QLabel("Trim Point 1:"), 1, 0)
-        self.trim1_spin = QSpinBox()
-        self.trim1_spin.setRange(200, 1000)
-        self.trim1_spin.setValue(436)
-        self.trim1_spin.setSuffix(" nm")
-        self.trim1_spin.setToolTip("First calibration wavelength (e.g., Hg 436nm)")
-        self.trim1_spin.valueChanged.connect(self.on_trim1_changed)
-        trim_layout.addWidget(self.trim1_spin, 1, 1)
+        self.preset_ar_btn = QPushButton("Argon (Ar)")
+        self.preset_ar_btn.setToolTip("Add Argon emission lines: 696.5, 706.7, 727.3, 738.4, 763.5, 811.5, 826.5 nm")
+        self.preset_ar_btn.clicked.connect(lambda: self.load_preset('argon'))
+        preset_buttons.addWidget(self.preset_ar_btn)
         
-        # Trim Point 2
-        trim_layout.addWidget(QLabel("Trim Point 2:"), 1, 2)
-        self.trim2_spin = QSpinBox()
-        self.trim2_spin.setRange(200, 1000)
-        self.trim2_spin.setValue(546)
-        self.trim2_spin.setSuffix(" nm")
-        self.trim2_spin.setToolTip("Second calibration wavelength (e.g., Hg 546nm)")
-        self.trim2_spin.valueChanged.connect(self.on_trim2_changed)
-        trim_layout.addWidget(self.trim2_spin, 1, 3)
+        preset_buttons.addStretch()
+        presets_layout.addLayout(preset_buttons)
         
-        layout.addLayout(trim_layout)
-        
-        # Trim mode controls
-        trim_controls = QHBoxLayout()
-        
-        self.trim_mode_cb = QCheckBox("Trim/Align Mode")
-        self.trim_mode_cb.setToolTip("Enable to drag spectrum and align with trim points")
-        self.trim_mode_cb.stateChanged.connect(self.on_trim_mode_changed)
-        self.trim_mode_cb.setStyleSheet("font-weight: bold; color: #0066cc;")
-        trim_controls.addWidget(self.trim_mode_cb)
-        
-        self.show_trim_markers_cb = QCheckBox("Show Trim Markers")
-        self.show_trim_markers_cb.setChecked(True)
-        self.show_trim_markers_cb.setToolTip("Show vertical lines at trim point wavelengths")
-        trim_controls.addWidget(self.show_trim_markers_cb)
-        
-        trim_controls.addStretch()
-        layout.addLayout(trim_controls)
-        
-        # Instructions when trim mode is active
-        self.trim_instructions = QLabel(
-            "🖱️ Trim Mode Active: Click and drag spectrum LEFT or RIGHT to align peaks with trim markers"
-        )
-        self.trim_instructions.setProperty("class", "warning-box")
-        self.trim_instructions.setVisible(False)
-        layout.addWidget(self.trim_instructions)
+        layout.addLayout(presets_layout)
         
         group.setLayout(layout)
         return group
@@ -766,6 +911,9 @@ class CaptureView(QWidget):
                 v += (vnew - v) * k_filter
                 self.spec_filtered[i] = v
             
+            # Apply irradiance correction (compensate for camera spectral sensitivity)
+            self.spec_filtered = self.apply_irradiance_correction(self.spec_filtered)
+            
             # Store final filtered result
             if self.hold_peaks:
                 self.intensity = np.maximum(self.intensity, self.spec_filtered)
@@ -821,7 +969,7 @@ class CaptureView(QWidget):
         else:
             self.ax.set_xlim(0, len(self.intensity))
             
-        self.ax.set_ylim(0, 270)
+        self.ax.set_ylim(0, 300)
         self.ax.set_xlabel('Wavelength (nm)', fontsize=9)
         self.ax.set_ylabel('Intensity', fontsize=9)
         self.ax.set_title('Real-time Spectrum', fontsize=11, fontweight='bold')
@@ -840,7 +988,7 @@ class CaptureView(QWidget):
                 if 0 <= pos < len(self.wavelengthData):
                     wl = self.wavelengthData[pos]
                     self.ax.axvline(x=wl, color='gray', linewidth=0.8, alpha=0.5)
-                    self.ax.text(wl, 260, f'{label}nm', fontsize=7, ha='center')
+                    self.ax.text(wl, 290, f'{label}nm', fontsize=7, ha='center')
         
         # Process intensity data
         intensity_to_plot = self.intensity.copy()
@@ -852,8 +1000,13 @@ class CaptureView(QWidget):
                 pass
         
         # Plot using wavelength on x-axis
-        if len(self.wavelengthData) > 0 and len(self.wavelengthData) == len(intensity_to_plot):
-            x_data = self.wavelengthData
+        if len(self.wavelengthData) > 0:
+            # Extract wavelength range corresponding to ROI
+            roi_wavelengths = self.wavelengthData[self.roi_x_start:self.roi_x_end]
+            if len(roi_wavelengths) == len(intensity_to_plot):
+                x_data = roi_wavelengths
+            else:
+                x_data = np.arange(len(intensity_to_plot))
         else:
             x_data = np.arange(len(intensity_to_plot))
         
@@ -888,38 +1041,13 @@ class CaptureView(QWidget):
             except:
                 pass
         
-        # Show calibration points (old method - removed)
-        
-        # Show trim point markers (Theremino-style calibration)
-        if self.show_trim_markers_cb.isChecked():
-            # Draw vertical lines at trim points
-            ylim = self.ax.get_ylim()
-            
-            # Trim point 1
-            self.ax.axvline(x=self.trim_point1, color='red', linewidth=2, linestyle='--', alpha=0.8, label=f'Trim 1: {self.trim_point1}nm')
-            self.ax.text(self.trim_point1, ylim[1] * 0.95, f'{self.trim_point1}nm', 
-                        fontsize=9, ha='center', va='top', color='red', fontweight='bold',
-                        bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='red', linewidth=2))
-            
-            # Trim point 2
-            self.ax.axvline(x=self.trim_point2, color='blue', linewidth=2, linestyle='--', alpha=0.8, label=f'Trim 2: {self.trim_point2}nm')
-            self.ax.text(self.trim_point2, ylim[1] * 0.95, f'{self.trim_point2}nm', 
-                        fontsize=9, ha='center', va='top', color='blue', fontweight='bold',
-                        bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='blue', linewidth=2))
-        
         # Draw without animation for performance
         self.canvas.draw_idle()
     
     def on_plot_click(self, event):
         """Handle click on spectrum plot."""
-        if event.inaxes != self.ax:
-            return
-        
-        if self.calibration_mode and event.xdata is not None:
-            pixel = int(round(event.xdata))
-            if 0 <= pixel < self.frame_width:
-                self.click_positions.append(pixel)
-                self.status_label.setText(f"Calibration point added: {pixel} px")
+        # Click handling removed - no longer needed
+        pass
     
     def on_exposure_changed(self, value):
         """Handle exposure slider change."""
@@ -930,20 +1058,6 @@ class CaptureView(QWidget):
             self.exposure_label.setText(str(value))
         if self.camera_thread and self.camera_thread.isRunning():
             self.camera_thread.set_camera_exposure(value)
-    
-    def on_brightness_changed(self, value):
-        """Handle brightness slider change."""
-        self.camera_brightness = value
-        self.brightness_label.setText(str(value))
-        if self.camera_thread and self.camera_thread.isRunning():
-            self.camera_thread.set_camera_brightness(value / 100.0)
-    
-    def on_contrast_changed(self, value):
-        """Handle contrast slider change."""
-        self.camera_contrast = value / 100.0
-        self.contrast_label.setText(f"{self.camera_contrast:.1f}")
-        if self.camera_thread and self.camera_thread.isRunning():
-            self.camera_thread.set_camera_contrast(self.camera_contrast)
     
     def on_roi_x_start_changed(self, value):
         """Handle ROI X start position slider change."""
@@ -1014,19 +1128,86 @@ class CaptureView(QWidget):
             self.frame_width, self.frame_height = resolution_map[self.resolution_combo.currentIndex()]
             self.intensity = np.zeros(self.frame_width)
             # Regenerate calibration for new width
-            cal_file = Path(__file__).parent.parent / 'caldata.txt'
-            caldata = readcal(self.frame_width, str(cal_file))
-            self.wavelengthData = caldata[0]
+            self.nm_min = 300.0
+            self.nm_max = 1100.0
+            self.wavelengthData = np.linspace(self.nm_min, self.nm_max, self.frame_width).tolist()
             self.graticule_data = generateGraticule(self.wavelengthData)
             self.tens = self.graticule_data[0]
             self.fifties = self.graticule_data[1]
+    
+    def reset_camera_settings(self):
+        """Reset all camera settings to defaults."""
+        reply = QMessageBox.question(
+            self,
+            "Reset Camera Settings?",
+            "This will reset:\n"
+            "• Resolution to 1920×1080\n"
+            "• Frame rate to 30 fps\n"
+            "• Exposure to Auto\n"
+            "• Brightness to 0\n"
+            "• Contrast to 1.0\n"
+            "• ROI to full frame (1920×1080)\n"
+            "• ROI Y Start to 544px\n"
+            "• ROI Height to 30px\n\n"
+            "Are you sure?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            # Reset UI controls
+            self.resolution_combo.setCurrentIndex(2)  # 1920×1080
+            self.fps_spin.setValue(30)
+            self.exposure_slider.setValue(-1)
+            self.brightness_slider.setValue(0)
+            self.contrast_slider.setValue(100)
+            
+    def reset_camera_settings(self):
+        """Reset all camera settings to defaults."""
+        reply = QMessageBox.question(
+            self,
+            "Reset Camera Settings?",
+            "This will reset:\n"
+            "• Resolution to 1920×1080\n"
+            "• Frame rate to 30 fps\n"
+            "• Exposure to Auto\n"
+            "• ROI to full frame (1920×1080)\n"
+            "• ROI Y Start to 544px\n"
+            "• ROI Height to 30px\n\n"
+            "Are you sure?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            # Reset UI controls
+            self.resolution_combo.setCurrentIndex(2)  # 1920×1080
+            self.fps_spin.setValue(30)
+            self.exposure_slider.setValue(-1)
+            
+            # Reset ROI controls
+            self.roi_x_start_slider.setValue(0)
+            self.roi_x_end_slider.setValue(1100)
+            self.roi_y_slider.setValue(544)
+            self.roi_h_slider.setValue(30)
+            
+            # Reset internal values
+            self.frame_width = 1920
+            self.frame_height = 1080
+            self.camera_exposure = -1
+            self.camera_fps = 30
+            self.roi_x_start = 0
+            self.roi_x_end = 1100
+            self.roi_y_start = 544
+            self.roi_height = 30
+            
+            self.status_label.setText("✓ Camera settings reset to defaults")
+            QMessageBox.information(self, "Settings Reset", "Camera settings have been reset to defaults.\n\nClick 'Apply Settings' to restart the camera with these settings.")
     
     def apply_current_camera_settings(self):
         """Apply current camera settings to running camera."""
         if self.camera_thread and self.camera_thread.isRunning():
             self.camera_thread.set_camera_exposure(self.camera_exposure)
-            self.camera_thread.set_camera_brightness(self.camera_brightness / 100.0)
-            self.camera_thread.set_camera_contrast(self.camera_contrast)
     
     def on_hold_peaks_changed(self, state):
         """Handle hold peaks checkbox."""
@@ -1034,90 +1215,611 @@ class CaptureView(QWidget):
         if not self.hold_peaks:
             self.intensity = np.zeros(self.frame_width)
     
-    def on_measure_changed(self, state):
-        """Handle measure mode checkbox."""
-        self.measure_mode = (state == Qt.CheckState.Checked.value)
-        # Measure mode is independent of trim mode
+    def on_wavelength_range_changed(self):
+        """Handle wavelength range spin box changes."""
+        # Ensure min is less than max
+        if self.nm_min_spin.value() >= self.nm_max_spin.value():
+            self.nm_max_spin.setValue(self.nm_min_spin.value() + 50)
+    
+    def apply_wavelength_range(self):
+        """Apply new wavelength range to spectrum display."""
+        new_min = float(self.nm_min_spin.value())
+        new_max = float(self.nm_max_spin.value())
+        
+        if new_min >= new_max:
+            QMessageBox.warning(self, "Invalid Range", 
+                              f"Minimum wavelength ({new_min} nm) must be less than maximum ({new_max} nm).")
+            return
+        
+        # Update wavelength range
+        self.nm_min = new_min
+        self.nm_max = new_max
+        
+        # Regenerate wavelength data with new range
+        self.wavelengthData = np.linspace(self.nm_min, self.nm_max, self.frame_width).tolist()
+        
+        # Regenerate graticule
+        self.graticule_data = generateGraticule(self.wavelengthData)
+        self.tens = self.graticule_data[0]
+        self.fifties = self.graticule_data[1]
+        
+        self.status_label.setText(f"✓ Wavelength range updated: {self.nm_min:.1f} - {self.nm_max:.1f} nm")
+        
+        QMessageBox.information(self, "Range Updated", 
+                              f"Wavelength display range updated to:\n{self.nm_min:.1f} - {self.nm_max:.1f} nm\n\n"
+                              f"Note: This only changes the display scale.\n"
+                              f"For accurate wavelength calibration, use the calibration section below.")
+    
+    def on_poly_degree_changed(self, value):
+        """Handle polynomial degree change."""
+        self.calib_polynomial_degree = value
+        if len(self.calib_peaks) > 0:
+            self.status_label.setText(f"Polynomial degree set to {value}. Click 'Apply Calibration' to recalculate.")
+    
+    def add_calibration_point(self):
+        """Add a new calibration point by entering current and known wavelengths."""
+        from PyQt6.QtWidgets import QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Add Calibration Point")
+        dialog.setMinimumWidth(400)
+        layout = QFormLayout()
+        
+        # Instructions
+        instruction_label = QLabel(
+            "<b>⚠️ Important:</b> Use wavelengths from the <b>CURRENT</b> spectrum display!<br>"
+            "<i>If your spectrum looks wrong, click 'Reset Calibration' first.</i>"
+        )
+        instruction_label.setWordWrap(True)
+        instruction_label.setStyleSheet("background: #fff3cd; padding: 8px; border-radius: 4px; color: #856404; border: 1px solid #ffc107;")
+        layout.addRow(instruction_label)
+        
+        # Current wavelength (what the spectrum shows now)
+        layout.addRow(QLabel("<b>Step 1: Current Wavelength</b>"))
+        current_wl_spin = QDoubleSpinBox()
+        current_wl_spin.setRange(200.0, 1200.0)
+        current_wl_spin.setValue(400.0)
+        current_wl_spin.setDecimals(2)
+        current_wl_spin.setSuffix(" nm")
+        current_wl_spin.setToolTip("Enter the wavelength value shown on a peak in your spectrum RIGHT NOW")
+        layout.addRow("Current Peak Wavelength:", current_wl_spin)
+        
+        # Known wavelength (what it should actually be)
+        layout.addRow(QLabel("<b>Step 2: Known Wavelength</b>"))
+        known_wl_spin = QDoubleSpinBox()
+        known_wl_spin.setRange(200.0, 1200.0)
+        known_wl_spin.setValue(435.8)
+        known_wl_spin.setDecimals(2)
+        known_wl_spin.setSuffix(" nm")
+        known_wl_spin.setToolTip("Enter the actual known wavelength of this emission line")
+        layout.addRow("Known Peak Wavelength:", known_wl_spin)
+        
+        # Quick presets for known wavelengths
+        layout.addRow(QLabel("<i>Quick presets for known wavelength:</i>"))
+        preset_layout = QHBoxLayout()
+        
+        presets = [
+            ("Hg 404.7", 404.7),
+            ("Hg 435.8", 435.8),
+            ("Hg 546.1", 546.1),
+            ("Hg 577.0", 577.0),
+            ("He 587.6", 587.6),
+            ("Ne 585.2", 585.2),
+        ]
+        
+        for label, wl in presets:
+            btn = QPushButton(label)
+            btn.setToolTip(f"Set known wavelength to {wl} nm")
+            btn.clicked.connect(lambda checked, w=wl: known_wl_spin.setValue(w))
+            preset_layout.addWidget(btn)
+        
+        layout.addRow(preset_layout)
+        
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+        
+        dialog.setLayout(layout)
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            current_wl = current_wl_spin.value()
+            known_wl = known_wl_spin.value()
+            
+            # Find the pixel position that corresponds to the current wavelength
+            if len(self.wavelengthData) > 0:
+                wavelength_array = np.array(self.wavelengthData)
+                pixel_distances = np.abs(wavelength_array - current_wl)
+                pixel = int(np.argmin(pixel_distances))
+                
+                # Add the calibration point
+                self.calib_peaks.append((pixel, known_wl))
+                print(f"DEBUG: Added calibration point: pixel {pixel} (current: {current_wl:.2f} nm) → known: {known_wl:.2f} nm")
+                print(f"DEBUG: Total calibration points: {len(self.calib_peaks)}")
+                
+                # Update the table
+                self.update_calibration_table()
+                
+                self.status_label.setText(f"✓ Added: {current_wl:.2f} nm → {known_wl:.2f} nm (Total: {len(self.calib_peaks)} points)")
+            else:
+                QMessageBox.warning(self, "Error", "No wavelength data available. Start the camera first.")
+    
+    def clear_calibration_points(self):
+        """Clear all calibration points and reset to default linear scale."""
+        reply = QMessageBox.question(
+            self, 
+            "Clear Calibration?",
+            "This will:\n"
+            "• Clear all calibration points\n"
+            "• Reset to default linear wavelength scale (300-850 nm)\n"
+            "• Remove polynomial calibration\n\n"
+            "Are you sure?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            # Clear calibration data
+            self.calib_peaks = []
+            self.calib_polynomial_coeffs = None
+            
+            # Reset to default linear calibration (300-850 nm)
+            self.nm_min = 300.0
+            self.nm_max = 850.0
+            self.wavelengthData = np.linspace(self.nm_min, self.nm_max, self.frame_width).tolist()
+            
+            # Regenerate graticule
+            self.graticule_data = generateGraticule(self.wavelengthData)
+            self.tens = self.graticule_data[0]
+            self.fifties = self.graticule_data[1]
+            
+            # Update UI
+            self.update_calibration_table()
+            self.calib_status_label.setText(f"✓ Cleared - Reset to default linear scale: {self.nm_min:.1f} - {self.nm_max:.1f} nm")
+            self.calib_status_label.setStyleSheet("background: #e3f2fd; color: #1565c0; font-size: 9pt; padding: 8px; border: 2px solid #2196f3; border-radius: 6px;")
+            self.status_label.setText("Calibration cleared and reset to default")
+            
+            # Update range spinboxes
+            self.nm_min_spin.setValue(int(self.nm_min))
+            self.nm_max_spin.setValue(int(self.nm_max))
+    
+    def load_calibration_button_clicked(self):
+        """Load calibration from file when button is clicked."""
+        cal_file = Path(__file__).parent.parent / 'caldata_polynomial.json'
+        
+        if not cal_file.exists():
+            QMessageBox.warning(
+                self,
+                "No Saved Calibration",
+                f"No saved calibration file found.\n\n"
+                f"Expected file: {cal_file.name}\n\n"
+                f"Please create a calibration first by:\n"
+                f"1. Adding calibration points\n"
+                f"2. Applying the calibration\n"
+                f"3. Saving with 'Save Calibration' button"
+            )
+            return
+        
+        success = self.load_calibration_from_file()
+        
+        if success:
+            QMessageBox.information(
+                self,
+                "Calibration Loaded",
+                f"Calibration loaded successfully!\n\n"
+                f"File: {cal_file.name}\n"
+                f"Points: {len(self.calib_peaks)}\n"
+                f"Polynomial Degree: {self.calib_polynomial_degree}\n"
+                f"Range: {self.nm_min:.1f} - {self.nm_max:.1f} nm"
+            )
+            self.status_label.setText(f"✓ Calibration loaded from {cal_file.name}")
+        else:
+            QMessageBox.critical(
+                self,
+                "Load Failed",
+                f"Failed to load calibration from {cal_file.name}\n\n"
+                f"The file may be corrupted or incompatible.\n"
+                f"Check the console for error details."
+            )
+    
+    def update_calibration_table(self):
+        """Update the calibration points table."""
+        self.calib_table.setRowCount(len(self.calib_peaks))
+        
+        for i, (pixel, known_wl) in enumerate(self.calib_peaks):
+            # Pixel position
+            self.calib_table.setItem(i, 0, QTableWidgetItem(str(pixel)))
+            
+            # Known wavelength
+            self.calib_table.setItem(i, 1, QTableWidgetItem(f"{known_wl:.2f}"))
+            
+            # Current wavelength (from current calibration)
+            if pixel < len(self.wavelengthData):
+                current_wl = self.wavelengthData[pixel]
+                self.calib_table.setItem(i, 2, QTableWidgetItem(f"{current_wl:.2f}"))
+            else:
+                self.calib_table.setItem(i, 2, QTableWidgetItem("N/A"))
+            
+            # Delete button
+            delete_btn = QPushButton("🗑️")
+            delete_btn.setToolTip("Remove this calibration point")
+            delete_btn.clicked.connect(lambda checked, idx=i: self.remove_calibration_point(idx))
+            delete_btn.setMaximumWidth(30)
+            delete_btn.setMaximumHeight(25)
+            delete_btn.setStyleSheet("padding: 2px; font-size: 12px;")
+            self.calib_table.setCellWidget(i, 3, delete_btn)
+    
+    def remove_calibration_point(self, index):
+        """Remove a calibration point by index."""
+        if 0 <= index < len(self.calib_peaks):
+            removed = self.calib_peaks.pop(index)
+            self.update_calibration_table()
+            self.status_label.setText(f"Removed calibration point: {removed[0]} px → {removed[1]} nm")
+    
+    def apply_polynomial_calibration(self):
+        """Apply polynomial fit to wavelength calibration."""
+        if len(self.calib_peaks) < 2:
+            QMessageBox.warning(self, "Insufficient Points", 
+                              "Need at least 2 calibration points for calibration.\n"
+                              "Add more points using the 'Add Point' button.")
+            return
+        
+        # Check if we have enough points for the polynomial degree
+        if len(self.calib_peaks) < self.calib_polynomial_degree + 1:
+            QMessageBox.warning(self, "Insufficient Points", 
+                              f"Need at least {self.calib_polynomial_degree + 1} points for degree {self.calib_polynomial_degree} polynomial.\n"
+                              f"Either add more points or reduce polynomial degree.")
+            return
+        
+        try:
+            # Extract pixel positions and known wavelengths
+            pixels = np.array([p[0] for p in self.calib_peaks])
+            wavelengths = np.array([p[1] for p in self.calib_peaks])
+            
+            # Sort by pixel position for better polynomial fitting
+            sort_indices = np.argsort(pixels)
+            pixels = pixels[sort_indices]
+            wavelengths = wavelengths[sort_indices]
+            
+            # Debug info
+            print(f"\n=== Polynomial Calibration Debug ===")
+            print(f"Frame width: {self.frame_width}")
+            print(f"Polynomial degree: {self.calib_polynomial_degree}")
+            print(f"Calibration points (sorted by pixel):")
+            for px, wl in zip(pixels, wavelengths):
+                print(f"  Pixel {px:4d} → {wl:.2f} nm")
+            
+            # Validate that pixels are within frame bounds
+            if np.any(pixels < 0) or np.any(pixels >= self.frame_width):
+                QMessageBox.warning(self, "Invalid Pixels",
+                                  f"Some pixel positions are out of range (0-{self.frame_width-1}).\n"
+                                  f"Pixels: {pixels}\n"
+                                  f"Please check your calibration points.")
+                return
+            
+            # Check for monotonicity (wavelengths should generally increase or decrease with pixel)
+            wavelength_diffs = np.diff(wavelengths)
+            if not (np.all(wavelength_diffs > 0) or np.all(wavelength_diffs < 0)):
+                reply = QMessageBox.question(self, "Non-monotonic Wavelengths",
+                                            "Warning: Your wavelength calibration points are not monotonic.\n"
+                                            "This may indicate incorrect pixel positions or wavelengths.\n\n"
+                                            "Do you want to continue anyway?",
+                                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                            QMessageBox.StandardButton.No)
+                if reply == QMessageBox.StandardButton.No:
+                    return
+            
+            # Fit polynomial: wavelength = f(pixel)
+            self.calib_polynomial_coeffs = np.polyfit(pixels, wavelengths, self.calib_polynomial_degree)
+            
+            print(f"\nPolynomial coefficients (high to low degree):")
+            for i, coeff in enumerate(self.calib_polynomial_coeffs):
+                print(f"  x^{self.calib_polynomial_degree - i}: {coeff:.6e}")
+            
+            # Apply polynomial to all pixel positions
+            pixel_array = np.arange(self.frame_width)
+            wavelengthData_full = np.polyval(self.calib_polynomial_coeffs, pixel_array)
+            
+            # Clamp to reasonable bounds to avoid excessive extrapolation on display
+            # Use display range settings as bounds
+            wavelengthData_clamped = np.clip(wavelengthData_full, self.nm_min, self.nm_max)
+            self.wavelengthData = wavelengthData_clamped.tolist()
+            
+            # Get actual wavelength range from the data
+            calib_wl_min = float(np.min(wavelengths))
+            calib_wl_max = float(np.max(wavelengths))
+            actual_wl_min = float(np.min(wavelengthData_clamped))
+            actual_wl_max = float(np.max(wavelengthData_clamped))
+            
+            print(f"\nCalibration wavelength info:")
+            print(f"  Raw polynomial range: {wavelengthData_full[0]:.2f} - {wavelengthData_full[-1]:.2f} nm")
+            print(f"  Clamped to display range: {actual_wl_min:.2f} - {actual_wl_max:.2f} nm")
+            print(f"  Calibration point range: {calib_wl_min:.2f} - {calib_wl_max:.2f} nm")
+            print(f"  Display range settings: {self.nm_min:.2f} - {self.nm_max:.2f} nm")
+            print(f"  Direction: {'increasing' if wavelengthData_full[-1] > wavelengthData_full[0] else 'decreasing'}")
+            
+            # Regenerate graticule
+            self.graticule_data = generateGraticule(self.wavelengthData)
+            self.tens = self.graticule_data[0]
+            self.fifties = self.graticule_data[1]
+            
+            # Calculate residuals (error at each calibration point)
+            predicted = np.polyval(self.calib_polynomial_coeffs, pixels)
+            residuals = wavelengths - predicted
+            rms_error = np.sqrt(np.mean(residuals**2))
+            
+            print(f"\nCalibration quality:")
+            print(f"  RMS error: {rms_error:.3f} nm")
+            print(f"  Max error: {np.max(np.abs(residuals)):.3f} nm")
+            print("="*40 + "\n")
+            
+            # Update status
+            degree_name = ["constant", "linear", "quadratic", "cubic", "quartic", "quintic"]
+            degree_str = degree_name[self.calib_polynomial_degree] if self.calib_polynomial_degree < len(degree_name) else f"degree-{self.calib_polynomial_degree}"
+            
+            self.calib_status_label.setText(
+                f"✓ {degree_str.capitalize()} calibration applied with {len(self.calib_peaks)} points\n"
+                f"Calibrated range: {calib_wl_min:.2f} - {calib_wl_max:.2f} nm | RMS Error: {rms_error:.3f} nm\n"
+                f"Display range: {self.nm_min:.2f} - {self.nm_max:.2f} nm"
+            )
+            self.calib_status_label.setStyleSheet("background: #e8f5e9; color: #2e7d32; font-size: 9pt; padding: 8px; border: 2px solid #4caf50; border-radius: 6px;")
+            
+            self.status_label.setText(f"✓ Calibration applied: {degree_str}, RMS error {rms_error:.3f} nm")
+            
+            # Update table to show new current wavelengths
+            self.update_calibration_table()
+            
+            # Save calibration to file
+            self.save_calibration()
+            
+            QMessageBox.information(self, "Calibration Applied", 
+                                  f"{degree_str.capitalize()} polynomial calibration applied successfully!\n\n"
+                                  f"Calibration Points: {len(self.calib_peaks)}\n"
+                                  f"Calibrated Range: {calib_wl_min:.2f} - {calib_wl_max:.2f} nm\n"
+                                  f"Display Range: {self.nm_min:.2f} - {self.nm_max:.2f} nm\n"
+                                  f"RMS Error: {rms_error:.3f} nm\n\n"
+                                  f"Your display range settings remain unchanged.\n"
+                                  f"Check the terminal/console for detailed calibration info.")
+            
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"\n=== Calibration Error ===")
+            print(error_details)
+            print("="*40 + "\n")
+            QMessageBox.critical(self, "Calibration Error", 
+                               f"Failed to apply calibration:\n{str(e)}\n\n"
+                               f"Check the terminal/console for detailed error information.")
+    
+    def load_preset(self, element):
+        """Load preset emission lines for common elements."""
+        presets = {
+            'mercury': [
+                (404.7, "Hg violet"),
+                (435.8, "Hg blue"),
+                (546.1, "Hg green"),
+                (577.0, "Hg yellow 1"),
+                (579.1, "Hg yellow 2"),
+            ],
+            'helium': [
+                (388.9, "He violet"),
+                (447.1, "He blue"),
+                (471.3, "He blue-green"),
+                (492.2, "He cyan"),
+                (501.6, "He green"),
+                (587.6, "He yellow"),
+                (667.8, "He red"),
+                (706.5, "He deep red"),
+            ],
+            'neon': [
+                (540.1, "Ne green"),
+                (585.2, "Ne yellow"),
+                (614.3, "Ne orange"),
+                (638.3, "Ne red-orange"),
+                (650.7, "Ne red"),
+                (703.2, "Ne deep red"),
+                (724.5, "Ne infrared edge"),
+            ],
+            'argon': [
+                (696.5, "Ar red 1"),
+                (706.7, "Ar red 2"),
+                (727.3, "Ar red 3"),
+                (738.4, "Ar red 4"),
+                (763.5, "Ar infrared 1"),
+                (811.5, "Ar infrared 2"),
+                (826.5, "Ar infrared 3"),
+            ]
+        }
+        
+        if element not in presets:
+            return
+        
+        lines = presets[element]
+        
+        # Ask user if they want to clear existing points
+        if len(self.calib_peaks) > 0:
+            reply = QMessageBox.question(self, "Clear Existing Points?",
+                                        "Do you want to clear existing calibration points before loading preset?",
+                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                        QMessageBox.StandardButton.No)
+            if reply == QMessageBox.StandardButton.Yes:
+                self.calib_peaks = []
+        
+        # Add preset lines at evenly spaced pixel positions
+        num_lines = len(lines)
+        pixel_spacing = self.frame_width // (num_lines + 1)
+        
+        for i, (wavelength, name) in enumerate(lines):
+            pixel = pixel_spacing * (i + 1)
+            self.calib_peaks.append((pixel, wavelength))
+        
+        self.update_calibration_table()
+        self.status_label.setText(f"✓ Loaded {element.capitalize()} preset: {num_lines} emission lines")
+        
+        QMessageBox.information(self, "Preset Loaded",
+                              f"Loaded {num_lines} {element.capitalize()} emission lines.\n\n"
+                              "After adding these preset lines, click 'Apply Calibration' to compute the polynomial fit.")
+    
+    def save_calibration(self):
+        """Save current calibration to file (called automatically after applying calibration)."""
+        if self.calib_polynomial_coeffs is None:
+            return
+        
+        try:
+            cal_file = Path(__file__).parent.parent / 'caldata_polynomial.json'
+            import json
+            
+            calibration_data = {
+                'frame_width': self.frame_width,
+                'polynomial_degree': self.calib_polynomial_degree,
+                'polynomial_coeffs': self.calib_polynomial_coeffs.tolist(),
+                'calibration_points': self.calib_peaks,
+                'nm_min': self.nm_min,
+                'nm_max': self.nm_max
+            }
+            
+            with open(cal_file, 'w') as f:
+                json.dump(calibration_data, f, indent=2)
+            
+            print(f"Calibration auto-saved to {cal_file}")
+        except Exception as e:
+            print(f"Failed to auto-save calibration: {e}")
+    
+    def save_calibration_to_file(self):
+        """Save current calibration to file (triggered by Save button)."""
+        if self.calib_polynomial_coeffs is None and len(self.calib_peaks) == 0:
+            QMessageBox.warning(self, "No Calibration",
+                              "No calibration to save. Add calibration points and apply calibration first.")
+            return
+        
+        try:
+            cal_file = Path(__file__).parent.parent / 'caldata_polynomial.json'
+            import json
+            
+            calibration_data = {
+                'frame_width': self.frame_width,
+                'polynomial_degree': self.calib_polynomial_degree,
+                'polynomial_coeffs': self.calib_polynomial_coeffs.tolist() if self.calib_polynomial_coeffs is not None else None,
+                'calibration_points': self.calib_peaks,
+                'nm_min': self.nm_min,
+                'nm_max': self.nm_max,
+                'wavelength_data': self.wavelengthData[:100]  # Save first 100 points as sample
+            }
+            
+            with open(cal_file, 'w') as f:
+                json.dump(calibration_data, f, indent=2)
+            
+            QMessageBox.information(self, "Calibration Saved",
+                                  f"Calibration saved successfully!\n\n"
+                                  f"File: {cal_file.name}\n"
+                                  f"Points: {len(self.calib_peaks)}\n"
+                                  f"Polynomial Degree: {self.calib_polynomial_degree}\n"
+                                  f"Range: {self.nm_min:.1f} - {self.nm_max:.1f} nm")
+            
+            self.status_label.setText(f"✓ Calibration saved to {cal_file.name}")
+        except Exception as e:
+            QMessageBox.critical(self, "Save Failed", f"Failed to save calibration:\n{str(e)}")
+    
+    def load_calibration_from_file(self):
+        """Load calibration from file."""
+        try:
+            cal_file = Path(__file__).parent.parent / 'caldata_polynomial.json'
+            if not cal_file.exists():
+                return False
+            
+            import json
+            with open(cal_file, 'r') as f:
+                calibration_data = json.load(f)
+            
+            # Check if frame width matches
+            if calibration_data.get('frame_width') != self.frame_width:
+                print(f"Warning: Saved calibration is for width {calibration_data.get('frame_width')}, current is {self.frame_width}")
+                return False
+            
+            # Restore calibration
+            self.calib_polynomial_degree = calibration_data.get('polynomial_degree', 2)
+            if calibration_data.get('polynomial_coeffs') is not None:
+                self.calib_polynomial_coeffs = np.array(calibration_data['polynomial_coeffs'])
+            else:
+                self.calib_polynomial_coeffs = None
+                
+            self.calib_peaks = calibration_data.get('calibration_points', [])
+            
+            # Recalculate wavelength data using the polynomial
+            if self.calib_polynomial_coeffs is not None:
+                pixel_array = np.arange(self.frame_width)
+                wavelengthData_full = np.polyval(self.calib_polynomial_coeffs, pixel_array)
+                # Clamp to display range to avoid excessive extrapolation
+                wavelengthData_clamped = np.clip(wavelengthData_full, self.nm_min, self.nm_max)
+                self.wavelengthData = wavelengthData_clamped.tolist()
+            else:
+                # No polynomial coeffs, use linear scale with current display range
+                self.wavelengthData = np.linspace(self.nm_min, self.nm_max, self.frame_width).tolist()
+            
+            # DON'T update nm_min/nm_max spinboxes - keep user's display range settings
+            
+            # Regenerate graticule
+            self.graticule_data = generateGraticule(self.wavelengthData)
+            self.tens = self.graticule_data[0]
+            self.fifties = self.graticule_data[1]
+            
+            # Update UI
+            self.poly_degree_spin.setValue(self.calib_polynomial_degree)
+            self.update_calibration_table()
+            
+            # DON'T update range spinboxes - keep user's display range settings
+            
+            self.calib_status_label.setText(
+                f"✓ Loaded calibration with {len(self.calib_peaks)} points\n"
+                f"Display range: {self.nm_min:.1f} - {self.nm_max:.1f} nm"
+            )
+            self.calib_status_label.setStyleSheet("background: #e8f5e9; color: #2e7d32; font-size: 9pt; padding: 8px; border: 2px solid #4caf50; border-radius: 6px;")
+            
+            print(f"Calibration loaded from {cal_file}")
+            return True
+            
+        except json.JSONDecodeError as e:
+            print(f"Failed to load calibration: Invalid JSON format - {e}")
+            print(f"The calibration file may be corrupted. You can delete it manually at:")
+            print(f"  {Path(__file__).parent.parent / 'caldata_polynomial.json'}")
+            return False
+        except Exception as e:
+            print(f"Failed to load calibration: {e}")
+            return False
     
     def set_trim_preset(self, point1, point2):
-        """Set trim point preset values."""
-        self.trim1_spin.setValue(point1)
-        self.trim2_spin.setValue(point2)
-        self.status_label.setText(f"Trim points set to {point1}nm and {point2}nm")
+        """Set trim point preset values (deprecated - use polynomial calibration instead)."""
+        self.trim_point1 = float(point1)
+        self.trim_point2 = float(point2)
+        self.status_label.setText(f"Trim points set to {point1}nm and {point2}nm (legacy mode)")
     
     def on_trim1_changed(self, value):
-        """Handle trim point 1 change."""
+        """Handle trim point 1 change (deprecated)."""
         self.trim_point1 = float(value)
     
     def on_trim2_changed(self, value):
-        """Handle trim point 2 change."""
+        """Handle trim point 2 change (deprecated)."""
         self.trim_point2 = float(value)
     
     def on_trim_mode_changed(self, state):
-        """Handle trim mode checkbox."""
-        self.trim_mode = (state == Qt.CheckState.Checked.value)
-        self.trim_instructions.setVisible(self.trim_mode)
-        
-        if self.trim_mode:
-            self.status_label.setText("🖱️ Trim Mode: Click and drag spectrum to align peaks")
-            # Connect mouse events to spectrum plot
-            self.spec_canvas.mpl_connect('button_press_event', self.on_spectrum_mouse_press)
-            self.spec_canvas.mpl_connect('motion_notify_event', self.on_spectrum_mouse_move)
-            self.spec_canvas.mpl_connect('button_release_event', self.on_spectrum_mouse_release)
-        else:
-            self.status_label.setText("Trim Mode disabled")
-            # Disconnect mouse events
-            self.spec_canvas.mpl_disconnect('button_press_event')
-            self.spec_canvas.mpl_disconnect('motion_notify_event')
-            self.spec_canvas.mpl_disconnect('button_release_event')
+        """Handle trim mode checkbox (deprecated - use calibration mode instead)."""
+        pass
     
     def on_spectrum_mouse_press(self, event):
-        """Handle mouse press on spectrum plot."""
-        if not self.trim_mode or event.inaxes != self.spec_ax:
-            return
-        
-        # Record drag start position
-        self.drag_start_x = event.xdata
-        self.initial_nm_min = self.nm_min
-        self.initial_nm_max = self.nm_max
+        """Handle mouse press on spectrum plot (deprecated trim mode)."""
+        pass
     
     def on_spectrum_mouse_move(self, event):
-        """Handle mouse move on spectrum plot - adjust wavelength scale."""
-        if not self.trim_mode or self.drag_start_x is None or event.inaxes != self.spec_ax:
-            return
-        
-        # Calculate drag delta in wavelength units
-        drag_delta = event.xdata - self.drag_start_x
-        
-        # Adjust wavelength range by dragging
-        # Moving right = shift spectrum left = increase wavelength values
-        self.nm_min = self.initial_nm_min + drag_delta
-        self.nm_max = self.initial_nm_max + drag_delta
-        
-        # Update wavelength calibration
-        self.wavelengthData = np.linspace(self.nm_min, self.nm_max, self.frame_width)
-        
-        # Update status
-        self.status_label.setText(f"Wavelength range: {self.nm_min:.1f} - {self.nm_max:.1f} nm (drag: {drag_delta:+.1f})")
-        
-        # Redraw spectrum with new wavelength scale
-        self.update_spectrum_plot()
+        """Handle mouse move on spectrum plot (deprecated trim mode)."""
+        pass
     
     def on_spectrum_mouse_release(self, event):
-        """Handle mouse release on spectrum plot."""
-        if not self.trim_mode:
-            return
-        
-        # Reset drag tracking
-        self.drag_start_x = None
-        self.initial_nm_min = None
-        self.initial_nm_max = None
-        
-        self.status_label.setText(f"✓ Calibration adjusted: {self.nm_min:.1f} - {self.nm_max:.1f} nm")
+        """Handle mouse release on spectrum plot (deprecated trim mode)."""
+        pass
     
     def update_spectrum_plot(self):
-        """Force spectrum plot update during drag operations."""
-        # Just call the regular update_spectrum which will redraw with new wavelength scale
+        """Force spectrum plot update during drag operations (deprecated)."""
         self.update_spectrum()
     
     def on_savpoly_changed(self, value):

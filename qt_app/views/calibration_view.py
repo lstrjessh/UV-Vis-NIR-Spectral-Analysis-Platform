@@ -809,7 +809,7 @@ class CalibrationView(QWidget):
         
         # Increase spacing significantly to prevent overlapping
         fig.tight_layout(pad=2.5)
-        fig.subplots_adjust(hspace=0.45, wspace=0.30, bottom=0.20, top=0.93, left=0.10, right=0.95)
+        fig.subplots_adjust(hspace=1.0, wspace=0.30, bottom=0.20, top=0.93, left=0.10, right=0.95)
         self.fig_compare.draw_idle()
 
     def _render_predictions_tab(self):

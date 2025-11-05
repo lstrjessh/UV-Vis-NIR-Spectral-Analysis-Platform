@@ -119,9 +119,11 @@ class MLPModel(PipelineBaseModel):
                 model = inner_pipeline.named_steps['model']
                 if hasattr(model, 'coefs_') and model.coefs_:
                     # Use first layer weights as feature importance
+                    # Shape of coefs_[0]: (n_features, n_hidden_units)
                     first_layer_weights = np.abs(model.coefs_[0])
+                    # Average across all hidden neurons for each input feature
                     return {
-                        f'feature_{i}': float(np.mean(first_layer_weights[:, i]))
-                        for i in range(first_layer_weights.shape[1])
+                        f'feature_{i}': float(np.mean(first_layer_weights[i, :]))
+                        for i in range(first_layer_weights.shape[0])
                     }
         return {}
