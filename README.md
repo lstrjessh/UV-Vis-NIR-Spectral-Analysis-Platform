@@ -1,104 +1,126 @@
 # Spectral Analysis Platform
 
-A user-friendly application for analyzing spectroscopic data and building machine learning models for concentration prediction. This platform was developed to complement a portable CMOS camera-based spectrophotometer for heavy metal detection, built as part of my undergraduate thesis project.
+A comprehensive application for analyzing spectroscopic data and building machine learning models for concentration prediction. Developed to complement a portable CMOS camera-based spectrophotometer for heavy metal detection, built as part of an undergraduate thesis project.
 
-Available as both a **desktop app** (Qt) and **web app** (Streamlit), so you can choose what works best for your workflow.
+Available as both a **desktop application** (Qt) and **web application** (Streamlit) to suit different workflows and deployment scenarios.
 
-## 🌟 What It Does
+## Features
 
-- **Calculate Absorbance** - Process raw spectra with dark spectrum correction and smoothing
-- **Visualize Spectra** - View and compare multiple spectra with interactive plots
-- **Train ML Models** - Build predictive models using various algorithms (PLSR, Random Forest, XGBoost, Neural Networks, and more)
-- **Predict Concentrations** - Use trained models to predict concentrations from new spectral data
+### Desktop Application (Qt)
 
-## 🚀 Quick Start
+![Capture View](images/capture_view.png)
+*Real-time spectrum acquisition with camera-based spectrometer*
 
-### Installation
+![Calibration View](images/calibration_view.png)
+*Machine learning model training and evaluation interface*
+
+The desktop application provides:
+
+- **Live Spectrum Capture** - Real-time data acquisition from camera-based spectrometers with adjustable exposure, gain, and smoothing controls
+- **Wavelength Calibration** - Polynomial calibration using known spectral lines for accurate wavelength mapping
+- **Absorbance Calculation** - Process raw intensity data with dark spectrum correction and reference normalization
+- **Spectrum Viewer** - Visualize and compare multiple spectra with interactive plots
+- **Model Training** - Build and evaluate machine learning models with automatic hyperparameter optimization
+- **Concentration Prediction** - Apply trained models to new spectral measurements
+
+### Web Application (Streamlit)
+
+The web interface offers a simplified workflow for spectral analysis:
+
+- **Calculate Absorbance** - Batch process spectral files with preprocessing options
+- **View Spectra** - Upload and overlay multiple spectrum files with peak detection
+- **Model Calibration** - Train predictive models using various ML algorithms
+- **Predict Concentration** - Load trained models and predict from new data
+
+## Installation
+
+Install required dependencies:
 
 ```bash
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-### Run the Desktop App
+## Usage
+
+### Desktop Application
 
 ```bash
 python qt_app/main_qt.py
 ```
 
-### Run the Web App
+### Web Application
 
 ```bash
 streamlit run Main.py
 ```
 
-Then open `http://localhost:8501` in your browser.
+Access the web interface at `http://localhost:8501`
 
-## 📊 Typical Workflow
+## Machine Learning Models
 
-1. **Load your data** - Upload CSV files with wavelength and absorbance/intensity columns
-2. **Preprocess** - Apply smoothing, derivatives, or baseline correction as needed
-3. **Train models** - Select algorithms, configure hyperparameters, and let the platform optimize them
-4. **Analyze results** - Compare models, visualize predictions, and check feature importance
-5. **Predict** - Load a trained model and predict concentrations for new samples
+The platform supports multiple regression algorithms:
 
-## 📦 Sample Data
+- **Partial Least Squares Regression (PLSR)** - Standard method for spectroscopic data
+- **Linear Models** - Ridge, Lasso, and Elastic Net regression
+- **Tree-Based Models** - Random Forest and XGBoost with ensemble learning
+- **Neural Networks** - PyTorch-based models with customizable architecture
+- **Support Vector Regression** - Kernel-based regression with RBF and linear kernels
 
-The `sample_data/` folder contains example files showing the expected format. Files are named with concentration values (e.g., `0.1_a.csv` for 0.1 concentration units).
+All models include:
+- Automatic hyperparameter optimization using Bayesian search
+- Cross-validation for robust performance evaluation
+- Preprocessing pipelines (smoothing, derivatives, baseline correction)
+- Model export and persistence for deployment
 
-CSV files should have:
-- Wavelength column (automatically detected as "Nanometers" or similar)
-- Absorbance/Intensity column (automatically detected as "Counts" or similar)
+## Data Format
 
-## 🔧 Build Executable (Windows)
+CSV files should contain wavelength and intensity/absorbance columns. The platform automatically detects column headers like "Nanometers", "Wavelength", "Counts", "Absorbance", etc.
+
+For calibration, filenames can include concentration values (e.g., `0.5_a.csv` for 0.5 concentration units) or concentrations can be entered manually.
+
+Example data is provided in `sample_data/` directory.
+
+## Building Executable (Windows)
+
+Create a standalone executable using PyInstaller:
 
 ```bash
 pip install pyinstaller
 pyinstaller SpectralAnalysis.spec
 ```
 
-The executable will be in `dist/SpectralAnalysis/SpectralAnalysis.exe`
+Output will be in `dist/SpectralAnalysis/`
 
-## 📋 Key Features
-
-- **Multiple ML Models**: PLSR, Ridge, Lasso, Random Forest, XGBoost, Neural Networks (PyTorch), SVR
-- **Auto Optimization**: Bayesian optimization finds the best hyperparameters automatically
-- **Visualizations**: Interactive plots for comparing models and analyzing predictions
-- **Export Everything**: Save models, metrics, and results in various formats
-
-## 📁 Project Structure
+## Project Structure
 
 ```
-thesis_webapp/
-├── Main.py              # Streamlit web app entry point
-├── qt_app/              # Desktop Qt application
-│   ├── main_qt.py      # Qt entry point
-│   └── views/          # UI components
-├── pages/               # Streamlit pages
-├── calibration/         # Core ML framework
-│   ├── core/           # Base classes
-│   ├── data/           # Data loading & preprocessing
-│   ├── models/         # ML model implementations
-│   └── utils/          # Metrics, export, optimization
-├── sample_data/         # Example spectral files
-└── requirements.txt     # Dependencies
+spectral_analysis_platform/
+├── Main.py                  # Streamlit web app entry point
+├── qt_app/                  # Desktop Qt application
+│   ├── main_qt.py          # Qt app entry point
+│   ├── views/              # UI view components
+│   ├── camera_thread.py    # Camera interface thread
+│   └── spec_functions.py   # Spectroscopy utilities
+├── pages/                   # Streamlit pages
+├── calibration/             # Core ML framework
+│   ├── core/               # Base classes and interfaces
+│   ├── data/               # Data loading and preprocessing
+│   ├── models/             # ML model implementations
+│   └── utils/              # Metrics, export, optimization
+├── sample_data/             # Example spectral files
+└── requirements.txt         # Python dependencies
 ```
 
-## 🐛 Common Issues
+## Troubleshooting
 
-**Import errors?** Make sure all dependencies are installed: `pip install -r requirements.txt`
+**Import errors**: Ensure all dependencies are installed with `pip install -r requirements.txt`
 
-**Port already in use?** Run Streamlit on a different port: `streamlit run Main.py --server.port 8502`
+**Port conflict**: Run Streamlit on a different port: `streamlit run Main.py --server.port 8502`
 
-**Model training fails?** Check that:
-- You have at least 3 samples (for cross-validation)
-- Concentration values are in filenames or entered manually
-- All spectra use the same wavelength grid
+**Camera not detected**: Check camera permissions and ensure OpenCV can access the device
 
-## 📄 License
+**Model training errors**: Verify you have at least 3 samples for cross-validation and that all spectra use consistent wavelength ranges
 
-This project was developed for research and educational purposes as part of undergraduate thesis work.
+## License
 
----
-
-**Note**: Build artifacts are excluded from the repository. Executables should be distributed via GitHub Releases.
+Developed for research and educational purposes as part of undergraduate thesis work.
