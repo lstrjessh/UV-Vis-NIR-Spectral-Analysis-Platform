@@ -7,10 +7,10 @@ Based on PySpectrometer2 by Les Wright
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QGroupBox,
     QSlider, QCheckBox, QSpinBox, QGridLayout, QScrollArea, QMessageBox,
-    QTableWidget, QTableWidgetItem, QHeaderView, QSizePolicy, QComboBox
+    QTableWidget, QTableWidgetItem, QHeaderView, QComboBox
 )
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont, QImage, QPixmap
+from PyQt6.QtGui import QImage, QPixmap
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import numpy as np
@@ -20,8 +20,8 @@ from pathlib import Path
 
 from qt_app.camera_thread import CameraThread
 from qt_app.spec_functions import (
-    wavelength_to_rgb, savitzky_golay, peakIndexes,
-    readcal, writecal, generateGraticule
+    savitzky_golay, peakIndexes,
+    generateGraticule
 )
 
 
@@ -725,9 +725,10 @@ class CaptureView(QWidget):
         self.calib_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.calib_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.calib_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        self.calib_table.setColumnWidth(3, 50)  # Set Actions column to 50px width
-        self.calib_table.setMinimumHeight(150)
-        self.calib_table.setMaximumHeight(400)  # Increased from 200 to 400
+        self.calib_table.setColumnWidth(3, 100)  # Increased to 100px for Edit + Delete buttons
+        self.calib_table.verticalHeader().setDefaultSectionSize(45)  # Set row height to 45px (increased from 35px)
+        self.calib_table.setMinimumHeight(300)  # Increased from 200 to 300
+        self.calib_table.setMaximumHeight(800)  # Increased from 600 to 800
         self.calib_table.setToolTip("List of calibration points for polynomial fitting")
         points_layout.addWidget(self.calib_table)
         
@@ -738,39 +739,6 @@ class CaptureView(QWidget):
         self.calib_status_label.setProperty("class", "info-box")
         self.calib_status_label.setStyleSheet("font-size: 9pt; padding: 8px;")
         layout.addWidget(self.calib_status_label)
-        
-        # Quick presets for common emission lines
-        presets_layout = QVBoxLayout()
-        presets_label = QLabel("Quick Presets (Common Emission Lines):")
-        presets_label.setStyleSheet("font-weight: bold; font-size: 9pt; margin-top: 10px;")
-        presets_layout.addWidget(presets_label)
-        
-        preset_buttons = QHBoxLayout()
-        
-        self.preset_hg_btn = QPushButton("Mercury (Hg)")
-        self.preset_hg_btn.setToolTip("Add Mercury emission lines: 404.7, 435.8, 546.1, 577.0, 579.1 nm")
-        self.preset_hg_btn.clicked.connect(lambda: self.load_preset('mercury'))
-        preset_buttons.addWidget(self.preset_hg_btn)
-        
-        self.preset_he_btn = QPushButton("Helium (He)")
-        self.preset_he_btn.setToolTip("Add Helium emission lines: 388.9, 447.1, 471.3, 492.2, 501.6, 587.6, 667.8, 706.5 nm")
-        self.preset_he_btn.clicked.connect(lambda: self.load_preset('helium'))
-        preset_buttons.addWidget(self.preset_he_btn)
-        
-        self.preset_ne_btn = QPushButton("Neon (Ne)")
-        self.preset_ne_btn.setToolTip("Add Neon emission lines: 540.1, 585.2, 614.3, 638.3, 650.7, 703.2, 724.5 nm")
-        self.preset_ne_btn.clicked.connect(lambda: self.load_preset('neon'))
-        preset_buttons.addWidget(self.preset_ne_btn)
-        
-        self.preset_ar_btn = QPushButton("Argon (Ar)")
-        self.preset_ar_btn.setToolTip("Add Argon emission lines: 696.5, 706.7, 727.3, 738.4, 763.5, 811.5, 826.5 nm")
-        self.preset_ar_btn.clicked.connect(lambda: self.load_preset('argon'))
-        preset_buttons.addWidget(self.preset_ar_btn)
-        
-        preset_buttons.addStretch()
-        presets_layout.addLayout(preset_buttons)
-        
-        layout.addLayout(presets_layout)
         
         group.setLayout(layout)
         return group
@@ -1441,14 +1409,31 @@ class CaptureView(QWidget):
             else:
                 self.calib_table.setItem(i, 2, QTableWidgetItem("N/A"))
             
+            # Actions: Edit and Delete buttons
+            actions_widget = QWidget()
+            actions_layout = QHBoxLayout(actions_widget)
+            actions_layout.setContentsMargins(2, 2, 2, 2)
+            actions_layout.setSpacing(2)
+            
+            # Edit button
+            edit_btn = QPushButton("✏️")
+            edit_btn.setToolTip("Edit this calibration point")
+            edit_btn.clicked.connect(lambda checked, idx=i: self.edit_calibration_point(idx))
+            edit_btn.setMaximumWidth(40)
+            edit_btn.setMaximumHeight(32)
+            edit_btn.setStyleSheet("padding: 2px; font-size: 12px;")
+            actions_layout.addWidget(edit_btn)
+            
             # Delete button
             delete_btn = QPushButton("🗑️")
             delete_btn.setToolTip("Remove this calibration point")
             delete_btn.clicked.connect(lambda checked, idx=i: self.remove_calibration_point(idx))
-            delete_btn.setMaximumWidth(30)
-            delete_btn.setMaximumHeight(25)
+            delete_btn.setMaximumWidth(40)
+            delete_btn.setMaximumHeight(32)
             delete_btn.setStyleSheet("padding: 2px; font-size: 12px;")
-            self.calib_table.setCellWidget(i, 3, delete_btn)
+            actions_layout.addWidget(delete_btn)
+            
+            self.calib_table.setCellWidget(i, 3, actions_widget)
     
     def remove_calibration_point(self, index):
         """Remove a calibration point by index."""
@@ -1456,6 +1441,102 @@ class CaptureView(QWidget):
             removed = self.calib_peaks.pop(index)
             self.update_calibration_table()
             self.status_label.setText(f"Removed calibration point: {removed[0]} px → {removed[1]} nm")
+    
+    def edit_calibration_point(self, index):
+        """Edit an existing calibration point."""
+        if not (0 <= index < len(self.calib_peaks)):
+            return
+        
+        from PyQt6.QtWidgets import QDialog, QFormLayout, QDialogButtonBox, QDoubleSpinBox
+        
+        # Get current values
+        current_pixel, current_known_wl = self.calib_peaks[index]
+        current_display_wl = self.wavelengthData[current_pixel] if current_pixel < len(self.wavelengthData) else 0.0
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Edit Calibration Point")
+        dialog.setMinimumWidth(400)
+        layout = QFormLayout()
+        
+        # Instructions
+        instruction_label = QLabel(
+            "<b>Edit Calibration Point</b><br>"
+            "<i>Modify the current or known wavelength values for this calibration point.</i>"
+        )
+        instruction_label.setWordWrap(True)
+        instruction_label.setStyleSheet("background: #e3f2fd; padding: 8px; border-radius: 4px; color: #1565c0; border: 1px solid #2196f3;")
+        layout.addRow(instruction_label)
+        
+        # Current wavelength (what the spectrum shows now)
+        layout.addRow(QLabel("<b>Current Peak Wavelength:</b>"))
+        current_wl_spin = QDoubleSpinBox()
+        current_wl_spin.setRange(200.0, 1200.0)
+        current_wl_spin.setValue(current_display_wl)
+        current_wl_spin.setDecimals(2)
+        current_wl_spin.setSuffix(" nm")
+        current_wl_spin.setToolTip("Enter the wavelength value shown on the peak in your current spectrum")
+        layout.addRow("Current Wavelength:", current_wl_spin)
+        
+        # Known wavelength (what it should actually be)
+        layout.addRow(QLabel("<b>Known Peak Wavelength:</b>"))
+        known_wl_spin = QDoubleSpinBox()
+        known_wl_spin.setRange(200.0, 1200.0)
+        known_wl_spin.setValue(current_known_wl)
+        known_wl_spin.setDecimals(2)
+        known_wl_spin.setSuffix(" nm")
+        known_wl_spin.setToolTip("Enter the actual known wavelength of this emission line")
+        layout.addRow("Known Wavelength:", known_wl_spin)
+        
+        # Quick presets for known wavelengths
+        layout.addRow(QLabel("<i>Quick presets for known wavelength:</i>"))
+        preset_layout = QHBoxLayout()
+        
+        presets = [
+            ("Hg 404.7", 404.7),
+            ("Hg 435.8", 435.8),
+            ("Hg 546.1", 546.1),
+            ("Hg 577.0", 577.0),
+            ("He 587.6", 587.6),
+            ("Ne 585.2", 585.2),
+        ]
+        
+        for label, wl in presets:
+            btn = QPushButton(label)
+            btn.setToolTip(f"Set known wavelength to {wl} nm")
+            btn.clicked.connect(lambda checked, w=wl: known_wl_spin.setValue(w))
+            preset_layout.addWidget(btn)
+        
+        layout.addRow(preset_layout)
+        
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+        
+        dialog.setLayout(layout)
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            new_current_wl = current_wl_spin.value()
+            new_known_wl = known_wl_spin.value()
+            
+            # Find the pixel position that corresponds to the new current wavelength
+            if len(self.wavelengthData) > 0:
+                wavelength_array = np.array(self.wavelengthData)
+                pixel_distances = np.abs(wavelength_array - new_current_wl)
+                new_pixel = int(np.argmin(pixel_distances))
+                
+                # Update the calibration point
+                self.calib_peaks[index] = (new_pixel, new_known_wl)
+                
+                print(f"DEBUG: Edited calibration point {index}: pixel {new_pixel} (current: {new_current_wl:.2f} nm) → known: {new_known_wl:.2f} nm")
+                
+                # Update the table
+                self.update_calibration_table()
+                
+                self.status_label.setText(f"✓ Edited point {index+1}: {new_current_wl:.2f} nm → {new_known_wl:.2f} nm")
+            else:
+                QMessageBox.warning(self, "Error", "No wavelength data available. Start the camera first.")
     
     def apply_polynomial_calibration(self):
         """Apply polynomial fit to wavelength calibration."""

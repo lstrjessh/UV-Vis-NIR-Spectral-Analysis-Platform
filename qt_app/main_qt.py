@@ -15,7 +15,7 @@ from qt_app.views.predict_view import PredictView
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("🔬 Spectral Analysis Platform - Advanced ML Calibration Tool")
+        self.setWindowTitle("🔬 Spectral Analysis Platform")
         self.resize(1650, 1000)
         
         # Set window icon if available
